@@ -4,8 +4,13 @@ import type { ComparisonResult, DailyPlaceComparison, KeyDifference, PlanDay, Pl
 // 화면 흐름을 확인하기 위한 것으로, 입력 텍스트에 실제로 있는 부분 문자열만
 // 추출하고 값이 불확실하면 null로 둔다 (사실 창작 금지 가드레일 준수).
 
+// "첫날"(첫째 날의 축약형)도 인정한다 — 빠뜨리면 "둘째 날"/"마지막
+// 날"만 일차 마커로 잡히고 "첫날"로 시작하는 문단은 안 잡혀서, 문서
+// 전체에 일차 마커가 있다고 판단하는 순간(hasAnyDayHeader) 그 앞의
+// "첫날" 문단이 "일차 마커 이전 제목"으로 오인되어 통째로 버려지는
+// 사고가 난다.
 const DAY_MARKER =
-  /^(?:(\d+)\s*일\s*차|Day\s*(\d+)|첫째\s*날|둘째\s*날|셋째\s*날|넷째\s*날|다섯째\s*날|여섯째\s*날|마지막\s*날)(?:에는|에서는|은|는|에)?/;
+  /^(?:(\d+)\s*일\s*차|Day\s*(\d+)|첫째\s*날|첫날|둘째\s*날|셋째\s*날|넷째\s*날|다섯째\s*날|여섯째\s*날|마지막\s*날)(?:에는|에서는|은|는|에)?/;
 
 // "1일차"류 마커 없이 날짜 자체가 하루의 시작을 나타내는 경우도 day
 // 구분자로 인정한다 — "8월 26일", "8/26", "2026.08.26", "2026-08-26"
@@ -40,12 +45,15 @@ function extractDayDate(headerLine: string): string | null {
   return match[0].trim();
 }
 
-// HH:MM, "오전/오후 N시(M분)", 그리고 오전/오후 없이 쓴 "N시(M분)"까지
-// 명시적 시각 표현으로 인정한다. 숫자가 없는 "오전/오후/저녁" 등 막연한
-// 시간대 표현은 별도로 TIME_OF_DAY_WORDS에서 문법적 근거(조사)가 있을
-// 때만 인정한다 — 이 패턴에는 포함하지 않는다.
+// "오전/오후 HH:MM", HH:MM, "오전/오후 N시(M분)", 그리고 오전/오후
+// 없이 쓴 "N시(M분)"까지 명시적 시각 표현으로 인정한다. "오전 10:30"
+// 처럼 AM/PM 접두와 콜론 표기가 함께 쓰이는 불릿 목록 형식이 있어
+// 가장 구체적인 알테너티브를 맨 앞에 둔다(그래야 "오전"이 따로 떨어져
+// 나머지 장소 텍스트에 붙는 문제가 없다). 숫자가 없는 "오전/오후/저녁"
+// 등 막연한 시간대 표현은 별도로 TIME_OF_DAY_WORDS에서 문법적 근거
+// (조사)가 있을 때만 인정한다 — 이 패턴에는 포함하지 않는다.
 const TIME_PATTERN =
-  /(\d{1,2}:\d{2})|((?:오전|오후)\s?\d{1,2}시(?:\s?\d{1,2}분)?)|(\d{1,2}시(?:\s?\d{1,2}분)?)/;
+  /((?:오전|오후)\s?\d{1,2}:\d{2})|(\d{1,2}:\d{2})|((?:오전|오후)\s?\d{1,2}시(?:\s?\d{1,2}분)?)|(\d{1,2}시(?:\s?\d{1,2}분)?)/;
 
 // 숫자 기반 비용 값 — 순수 숫자(2,000원), 만원 단위(3만원), 범위
 // (4만~7만원), "약" 접두(약 15,000원), ₩ 표기까지 인정한다. 문자열 어디서든
@@ -58,11 +66,30 @@ const COST_PATTERN =
 // 쓰는 확장 패턴. "무료"는 여기서만 인정해 오탐(장소명 부분 문자열
 // 오추출)을 막는다.
 const COST_VALUE_PATTERN = new RegExp(`(?:${COST_PATTERN.source}|무료)`);
+// 비용 금액 바로 앞/뒤에 원문 그대로 붙어 있는 조건 수식어 — "1박"/
+// "2인 기준"처럼 금액 앞에, "정도"/"예상"처럼 금액 뒤에 온다. 이 조건은
+// stated_cost에서 지워지면 안 되는 정보라(요구사항: "1박 약 90,000원"의
+// "1박"이 사라지면 안 됨), COST_PATTERN이 찾는 숫자 부분과 이 수식어를
+// 하나의 표현으로 묶어서 추출한다. 금액과 공백만 두고 곧바로 붙어 있을
+// 때만 인정해, 문장 앞쪽의 무관한 숫자·단어까지 끌어오지 않는다 —
+// "1박 2일 여행에서 약 90,000원"이면 "여행에서" 뒤엔 수식어 모양이
+// 아니므로 "약 90,000원"만 남는다.
+const COST_PREFIX_QUALIFIER = /(?:\d+\s*(?:박|일|인)(?:\s*기준)?\s*)*/;
+const COST_SUFFIX_QUALIFIER = /(?:\s*(?:정도|예상|가량|쯤))*/;
+// 실제 텍스트에서 비용 "표현 전체"(수식어 포함)를 찾을 때 쓴다 —
+// COST_PATTERN 자체는 그대로 두고(다른 용도로도 쓰이므로), 값 보존이
+// 필요한 자리에서만 이 확장 패턴을 쓴다.
+const COST_EXPRESSION_PATTERN = new RegExp(
+  `${COST_PREFIX_QUALIFIER.source}${COST_PATTERN.source}${COST_SUFFIX_QUALIFIER.source}`
+);
+const COST_EXPRESSION_VALUE_PATTERN = new RegExp(
+  `${COST_PREFIX_QUALIFIER.source}(?:${COST_VALUE_PATTERN.source})${COST_SUFFIX_QUALIFIER.source}`
+);
 // "교통비 20,000원"처럼 비용 값 앞에 붙는 라벨. 값과 분리해 라벨은
 // stated_cost에서 제거하되(요구사항 7), 원문에 실제로 있던 값 자체는
 // 그대로 보존한다.
 const COST_LABEL_PATTERN =
-  /^(교통비|입장\s?료|입장\s?비용|식사\s?비용|카페\s?비용|숙소\s?비용|별도\s?비용|가격|비용)\s*(은|는)?\s*/;
+  /^(교통비|입장\s?료|입장\s?비용|식사\s?비용|식사비|카페\s?비용|숙소\s?비용|별도\s?비용|가격|비용)\s*(은|는)?\s*/;
 // "정보 없음/없다" 계열 — 비용이 명시되지 않았다는 문장. UI에서만
 // "정보 없음"으로 보여주고 raw data는 null로 유지한다(요구사항 5).
 const COST_NO_INFO_PATTERN = /^(정보)?\s*(는|은)?\s*(없다|없음)$/;
@@ -87,7 +114,7 @@ function parseCostOnlyExpression(rawChunk: string): { value: string | null } | n
     return hadLabel ? { value: null } : null;
   }
 
-  const valueMatch = text.match(new RegExp(`^(?:${COST_VALUE_PATTERN.source})$`));
+  const valueMatch = text.match(new RegExp(`^(?:${COST_EXPRESSION_VALUE_PATTERN.source})$`));
   if (valueMatch) {
     return { value: valueMatch[0] };
   }
@@ -98,7 +125,10 @@ function parseCostOnlyExpression(rawChunk: string): { value: string | null } | n
 /** 서술형 문장 하나가 "장소/활동 문장이 아니라 비용 문장"인지 판정한다.
  *  대시 chunk와 달리 문장은 맥락이 넓어 라벨("비용은"/"교통비는" 등)이
  *  없으면 비용 문장으로 확정하지 않는다 — 과잉 인식을 막기 위한
- *  보수적 기준. */
+ *  보수적 기준. 값 매칭은 라벨 바로 뒤에서 시작하기만 하면 되고(앞쪽은
+ *  라벨로 이미 확정됨), 뒤에 "정도"/"예상"처럼 원문에 흔히 붙는 수식어가
+ *  남아 있어도 인정한다 — 전체 일치를 요구하면 "비용은 16,000원 정도"
+ *  같은 표현이 통째로 버려지기 때문이다. */
 function parseCostSentence(rawSentence: string): { value: string | null } | null {
   const original = rawSentence.trim().replace(/[.!?]+$/, "").trim();
   if (!original) return null;
@@ -113,12 +143,92 @@ function parseCostSentence(rawSentence: string): { value: string | null } | null
     return { value: null };
   }
 
-  const valueMatch = text.match(new RegExp(`^(?:${COST_VALUE_PATTERN.source})$`));
+  const valueMatch = text.match(new RegExp(`^(?:${COST_EXPRESSION_VALUE_PATTERN.source})`));
   if (valueMatch) {
     return { value: valueMatch[0] };
   }
 
   return { value: null };
+}
+
+// "스카이캡슐 비용은 2인 기준 약 40,000원 정도"처럼 장소/항목명 뒤에
+// 비용 라벨이 곧바로 이어지는 문장에서 쓰는, 앞쪽에 자유 텍스트(장소명)
+// 를 허용하는 버전 — COST_LABEL_PATTERN과 같은 라벨 목록이지만 문장
+// 맨 앞이 아니어도 인정한다. 라벨 앞에 아무 것도 없으면(=COST_LABEL_
+// PATTERN이 이미 처리하는 "비용 전용 문장") group 1이 빈 문자열이
+// 될 수 없어(최소 1글자) 여기서 매칭되지 않으므로 두 함수는 서로
+// 겹치지 않는다.
+const PLACE_COST_LABEL_PATTERN =
+  /^(.{1,20}?)\s*(교통비|입장\s?료|입장\s?비용|식사\s?비용|식사비|카페\s?비용|숙소\s?비용|별도\s?비용|가격|비용)\s*(은|는)?\s*(.+)$/;
+
+/** 장소명 + 비용 라벨 + 비용이 한 문장에 같이 있는 경우, 그 장소명을
+ *  새 item으로 만들고 비용을 바로 붙이기 위해 둘을 함께 추출한다.
+ *  라벨이 없거나(=일반 서술) 라벨 뒤에 실제 비용 값이 없으면(=단순
+ *  설명 문장) null — 없는 비용을 추정해 만들지 않는다. */
+function parsePlaceCostSentence(sentence: string): { place: string; cost: string } | null {
+  const cleaned = sentence.trim().replace(/[.!?]+$/, "").trim();
+  const match = cleaned.match(PLACE_COST_LABEL_PATTERN);
+  if (!match) return null;
+
+  // 장소명에 조사가 붙어 있으면(예: "카페에서 식사비...") 떼어낸다 —
+  // 다른 narrative 추출 경로들과 동일한 조사 스트립 규칙을 그대로
+  // 적용해 "카페에서"가 아니라 "카페"가 place로 남게 한다.
+  const { stripped: place } = stripLongestSuffix(match[1].trim(), PLACE_PARTICLE_SUFFIXES);
+  if (!place) return null;
+
+  const costMatch = match[4].match(COST_EXPRESSION_PATTERN);
+  if (!costMatch) return null;
+
+  return { place, cost: costMatch[0].trim() };
+}
+
+// "저녁: 광안리 횟집 / 약 35,000원"처럼 "라벨: 설명 / 비용"으로 쓰인
+// 줄. 콜론 앞이 시간대 단어(저녁/아침/점심/오전/오후)면 time으로 쓰고,
+// 아니면(숙소 등) 라벨 자체는 버리고 콜론 뒤 내용을 place로 쓴다 —
+// place가 이미 있으니 라벨을 활동명으로 따로 만들지 않는다. 마지막
+// "/" 조각이 실제 비용 표현일 때만 이 형식으로 인정해, "/"가 다른
+// 용도로 쓰인 줄을 오인하지 않게 한다. 라벨에는 숫자를 허용하지 않는다
+// — 그렇지 않으면 "오전 10:00 해운대..."처럼 시각 표기 안의 콜론을
+// "라벨:"로 착각해 "10"이 라벨, "00 해운대..."가 내용으로 잘못
+// 잘리는 사고가 난다(실제 라벨은 항상 "저녁"/"숙소" 같은 한글 단어).
+function parseLabeledSlashLine(line: string): PlanItem | null {
+  const headerMatch = line.match(/^([^:\n0-9]{1,12}):\s*(.+)$/);
+  if (!headerMatch) return null;
+
+  const label = headerMatch[1].trim();
+  const rest = headerMatch[2].trim();
+  const slashParts = rest
+    .split(/\s*\/\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (slashParts.length < 2) return null;
+
+  const lastPart = slashParts[slashParts.length - 1];
+  const costMatch = lastPart.match(COST_EXPRESSION_PATTERN);
+  if (!costMatch) return null;
+
+  // "남포동에서 돼지국밥"처럼 콜론 뒤 내용에 조사가 어절 중간에 있고
+  // 그 뒤에 다른 말이 더 있으면 place/description으로 나눈다. "광안리
+  // 횟집"처럼 조사가 아예 없으면 전체가 그대로 place가 된다.
+  const joinedPlace = slashParts.slice(0, -1).join(" / ").trim();
+  const { place, description } = extractPlaceAndDescription(joinedPlace);
+  if (!place) return null;
+
+  // 라벨이 시간대 단어(저녁 등)면 time으로 쓰고, 아니면 "점심"/"숙소"
+  // 처럼 TRAILING_ACTIVITY_WORDS에 있는 활동 라벨일 때만 activity로
+  // 살린다 — "점심: 남포동에서 돼지국밥 / 약 10,000원"에서 "점심"이라는
+  // 정보 자체가 통째로 사라지지 않게 한다(place/description만으로는
+  // 이 항목이 점심 식사였다는 사실이 드러나지 않는다).
+  const isTimeLabel = TIME_OF_DAY_WORDS.has(label);
+  const isActivityLabel = !isTimeLabel && TRAILING_ACTIVITY_WORDS.includes(label);
+
+  return {
+    time: isTimeLabel ? label : null,
+    place,
+    activity: isActivityLabel ? label : null,
+    stated_cost: costMatch[0],
+    description,
+  };
 }
 
 // 숫자 없이 쓰인 시간대 표현. "아침/점심/저녁"은 식사 활동으로도 쓰이는
@@ -144,6 +254,9 @@ const TRAILING_ACTIVITY_WORDS = [
   "숙소",
   "체크인",
   "체크아웃",
+  "복귀",
+  "구경",
+  "이용",
 ];
 
 // 서술형(문장) 일차 본문에서 어절 단위로 장소/활동 후보를 골라낼 때 쓰는
@@ -173,6 +286,15 @@ const PLACE_PARTICLE_SUFFIXES = [
   "도",
   "의",
 ].sort((a, b) => b.length - a.length);
+
+// 주격/보조사(이/가/은/는)는 "저녁은"/"오늘은"처럼 시간대·날짜 단어를
+// 잡을 때는 필요하지만(그래서 위 목록엔 그대로 둔다), 동사 활용형
+// (예: "보내는"→"보내", "쉬었다가"의 "가")에도 흔히 붙어서 이 네 개를
+// 새 장소를 만드는 근거로 쓰면 자연스러운 문장에서 동사 어간·연결어까지
+// 장소로 오추출된다. 그래서 "새 place item을 만들지 여부"를 판단할
+// 때만 이 네 조사로 떨어진 경우는 제외한다 — 시간대/스킵/활동 단어
+// 판정에는 영향 없다(그 판정들은 이미 이 네 조사가 필요하므로).
+const WEAK_PLACE_PARTICLES = new Set(["이", "가", "은", "는"]);
 
 // 일차 헤더에 흔히 붙는 시간대·순서·연결어. 장소/활동 후보에서 제외한다.
 const NARRATIVE_SKIP_WORDS = new Set([
@@ -231,8 +353,16 @@ function splitIntoDayBlocks(text: string): string[] {
     .map((p) => p.trim())
     .filter(Boolean);
 
+  // 문서 전체에 실제 일차 마커가 하나라도 있으면, 그 첫 마커 이전에
+  // 나오는 문단("부산 2박 3일 여행" 같은 제목/소개 줄)은 하루로 세지
+  // 않는다 — 그렇지 않으면 이 제목 문단이 가짜 "1일차"가 되고 실제
+  // 일차들이 전부 하나씩 밀린다. 문서 전체에 일차 마커가 아예 없으면
+  // (기존 fallback) 첫 문단도 그대로 살려서 단일 암묵적 일차로 쓴다.
+  const hasAnyDayHeader = paragraphs.some((p) => isDayHeaderStart(p));
+
   const blocks: string[] = [];
   let pendingHeaderOnly: string | null = null;
+  let sawDayHeader = false;
 
   for (const paragraph of paragraphs) {
     // 날짜 형식("2026-08-26" 등)은 "N일차"보다 길어질 수 있어 길이
@@ -242,6 +372,7 @@ function splitIntoDayBlocks(text: string): string[] {
     if (isHeaderOnly) {
       if (pendingHeaderOnly) blocks.push(pendingHeaderOnly);
       pendingHeaderOnly = paragraph;
+      sawDayHeader = true;
       continue;
     }
     if (pendingHeaderOnly) {
@@ -249,9 +380,15 @@ function splitIntoDayBlocks(text: string): string[] {
       pendingHeaderOnly = null;
     } else if (isDayHeaderStart(paragraph)) {
       blocks.push(paragraph);
+      sawDayHeader = true;
     } else if (blocks.length > 0) {
       // 헤더 없이 이어지는 본문은 직전 일차에 포함
       blocks[blocks.length - 1] += `\n${paragraph}`;
+    } else if (hasAnyDayHeader && !sawDayHeader) {
+      // 진짜 일차 마커가 뒤에 있다는 걸 이미 아는 상태(hasAnyDayHeader)
+      // 라, 그 앞에 나온 이 제목/소개 문단은 일정 정보가 아니므로 조용히
+      // 건너뛴다.
+      continue;
     } else {
       blocks.push(paragraph);
     }
@@ -299,22 +436,41 @@ function parseMemoChunk(rawChunk: string): PlanItem {
     }
   }
 
-  const cost = extractLeading(COST_PATTERN, remaining);
-  remaining = cost.rest;
+  const cost = extractLeading(COST_EXPRESSION_PATTERN, remaining);
+  // "이용 / 약 16,000원"처럼 "/"로 비용을 나눠 적은 줄은 비용만 잘라내면
+  // 구분자 "/"가 장소 쪽에 그대로 남는다 — 원문에 있던 내용이 아니라
+  // 형식상 구분자일 뿐이므로 지운다.
+  remaining = cost.rest.replace(/\/+$/, "").trim();
 
   let place: string | null = remaining || null;
   let activity: string | null = null;
+  let description: string | null = null;
 
+  let matchedTrailingActivity = false;
   for (const word of TRAILING_ACTIVITY_WORDS) {
     if (remaining.endsWith(word) && remaining !== word) {
       place = remaining.slice(0, remaining.length - word.length).trim() || null;
       activity = word;
+      matchedTrailingActivity = true;
       break;
     } else if (remaining === word) {
       place = null;
       activity = word;
+      matchedTrailingActivity = true;
       break;
     }
+  }
+
+  // "남포동에서 돼지국밥"처럼 장소 뒤에 조사가 있고 그 뒤에 다른 말이
+  // 더 있으면(활동 접미어로 끝나는 경우가 아닐 때만), 조사 붙은 어절을
+  // place로, 나머지를 description으로 나눈다 — 그렇지 않으면 "에서"
+  // 같은 조사가 안 떨어진 채로 통째로 place가 되어버린다. 조사가 아예
+  // 없는 "광안리 횟집" 같은 문구는 그대로 place 전체로 남는다(잘라낼
+  // 근거가 없으므로).
+  if (!matchedTrailingActivity && remaining) {
+    const extracted = extractPlaceAndDescription(remaining);
+    place = extracted.place || null;
+    description = extracted.description;
   }
 
   return {
@@ -322,17 +478,51 @@ function parseMemoChunk(rawChunk: string): PlanItem {
     place,
     activity,
     stated_cost: cost.matched,
-    description: null,
+    description,
   };
 }
 
-function stripLongestSuffix(token: string, suffixes: string[]): { stripped: string; matched: boolean } {
+function stripLongestSuffix(
+  token: string,
+  suffixes: string[]
+): { stripped: string; matched: boolean; suffix: string | null } {
   for (const suffix of suffixes) {
     if (token.length > suffix.length && token.endsWith(suffix)) {
-      return { stripped: token.slice(0, token.length - suffix.length), matched: true };
+      return { stripped: token.slice(0, token.length - suffix.length), matched: true, suffix };
     }
   }
-  return { stripped: token, matched: false };
+  return { stripped: token, matched: false, suffix: null };
+}
+
+/** "남포동에서 돼지국밥"처럼 장소 뒤에 조사가 붙고 그 뒤에 다른 말이
+ *  더 이어지는 문구에서, 조사가 붙은 첫 어절을 place로, 그 뒤에 남는
+ *  말을 description으로 나눈다. parseMemoChunk/parseLabeledSlashLine/
+ *  parsePlaceCostSentence 모두 공백으로 이어붙인 원문 조각을 다루는데,
+ *  조사가 어절 중간에 있으면 그 뒤 텍스트가 장소명에 그대로 붙어버리는
+ *  문제(예: "남포동에서 돼지국밥"이 place 전체가 되는 것)를 막기 위한
+ *  것 — 새 단어를 만들지 않고 원문 조각을 place/description으로
+ *  나눠 담을 뿐이다. 조사가 붙은 어절이 하나도 없으면(예: "광안리
+ *  횟집"처럼 명사가 조사 없이 그대로 이어지는 경우) 잘라낼 근거가
+ *  없으므로 원문 전체를 place로 그대로 둔다. */
+// extractPlaceAndDescription 전용으로 좁힌 조사 목록 — 1글자 조사(을/를/
+// 로/과/와/에/도/의)는 여기서 빼뒀다. "흰여울문화마을"처럼 장소명 자체가
+// 조사와 같은 음절로 끝나는 경우(마을의 "을"), 이 함수가 그 음절을
+// 진짜 조사로 착각해 "흰여울문화마"처럼 이름을 잘라버리는 사고가
+// 있었다 — 조사가 2글자 이상이면 단어 끝과 우연히 겹칠 위험이 훨씬
+// 낮아 안전하다. PLACE_PARTICLE_SUFFIXES(서술형 토크나이저 전용)는
+// 이미 검증된 기존 동작이라 그대로 둔다.
+const UNAMBIGUOUS_PLACE_PARTICLE_SUFFIXES = ["에서는", "에는", "으로는", "이라는", "라는", "에서", "으로", "로는", "과는", "와는"];
+
+function extractPlaceAndDescription(text: string): { place: string; description: string | null } {
+  const tokens = text.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < tokens.length; i++) {
+    const { stripped, matched } = stripLongestSuffix(tokens[i], UNAMBIGUOUS_PLACE_PARTICLE_SUFFIXES);
+    if (matched && stripped.length >= 2) {
+      const rest = tokens.slice(i + 1).join(" ").trim();
+      return { place: stripped, description: rest || null };
+    }
+  }
+  return { place: text.trim(), description: null };
 }
 
 // 조사를 뗀 어절이 통째로 "숫자시(분)" / "HH:MM" / "오전·오후+숫자시" 꼴일
@@ -406,17 +596,64 @@ function extractNarrativeItems(content: string): PlanItem[] {
     // 비용 문장("비용은 약 15,000원이다.", "숙소 비용은 정보 없음.")은
     // 새 item을 만들지 않고 바로 앞 문장에서 만들어진 item에 붙인다 —
     // "비용은 기존 item의 stated_cost 속성"이라는 규칙을 서술형에도
-    // 동일하게 강제한다.
+    // 동일하게 강제한다. 다만 붙일 앞선 item이 아예 없으면(비용 문장이
+    // 일차의 첫 문장인 경우) 값을 조용히 버리지 않고 비용만 담은
+    // item으로라도 보존한다 — 대시 형식(parseDashLine)의 "직전 item이
+    // 없는 비정상 입력" 처리와 같은 원칙이다.
     const costSentence = parseCostSentence(sentence);
     if (costSentence !== null) {
       const previous = items[items.length - 1];
-      if (previous && costSentence.value !== null) {
-        previous.stated_cost = costSentence.value;
+      if (costSentence.value !== null) {
+        if (previous) {
+          previous.stated_cost = costSentence.value;
+        } else {
+          items.push({
+            time: currentTimeMarker,
+            place: null,
+            activity: null,
+            stated_cost: costSentence.value,
+            description: null,
+          });
+          lastActivitySource = null;
+        }
       }
       continue;
     }
 
-    const withoutCost = sentence.replace(new RegExp(COST_PATTERN.source, "g"), " ");
+    // "저녁: 광안리 횟집 / 약 35,000원"처럼 콜론+슬래시로 장소와 비용을
+    // 함께 적은 줄은 어절 단위 토큰화 전에 통째로 하나의 item으로
+    // 만든다 — 이런 줄은 조사도 쉼표도 없어 아래 토큰 루프가 장소명을
+    // 인식하지 못하기 때문이다.
+    const labeledSlash = parseLabeledSlashLine(sentence);
+    if (labeledSlash !== null) {
+      items.push(labeledSlash);
+      continue;
+    }
+
+    // "스카이캡슐 비용은 2인 기준 약 40,000원 정도"처럼 장소명 뒤에 비용
+    // 라벨이 곧바로 붙은 문장도 마찬가지로 통째로 한 item으로 만든다.
+    const placeCost = parsePlaceCostSentence(sentence);
+    if (placeCost !== null) {
+      items.push({
+        time: currentTimeMarker,
+        place: placeCost.place,
+        activity: null,
+        stated_cost: placeCost.cost,
+        description: null,
+      });
+      lastActivitySource = null;
+      continue;
+    }
+
+    // 위 두 형식에 해당하지 않는 일반 서술 문장에 비용 표현이 섞여
+    // 있으면(예: "~을 방문한다. 총 20,000원 정도 든다" 같은 경우), 어절
+    // 토큰화 전에 값을 미리 찾아 두고, 이 문장에서 실제로 item이 하나라도
+    // 생기면 그중 마지막 item에 붙인다 — 문장 전체가 비용 전용은 아니라
+    // parseCostSentence가 못 잡는 경우의 보완이다.
+    const inlineCostMatch = sentence.match(COST_EXPRESSION_PATTERN);
+    const itemCountBeforeSentence = items.length;
+
+    const withoutCost = sentence.replace(new RegExp(COST_EXPRESSION_PATTERN.source, "g"), " ");
     const rawTokens = withoutCost.split(/\s+/).filter(Boolean);
 
     for (let i = 0; i < rawTokens.length; i++) {
@@ -425,7 +662,7 @@ function extractNarrativeItems(content: string): PlanItem[] {
       const cleaned = rawToken.replace(/[,.·]+$/, "");
       if (!cleaned) continue;
 
-      const { stripped: particleStripped, matched: hasParticle } = stripLongestSuffix(
+      const { stripped: particleStripped, matched: hasParticle, suffix: matchedSuffix } = stripLongestSuffix(
         cleaned,
         PLACE_PARTICLE_SUFFIXES
       );
@@ -442,7 +679,13 @@ function extractNarrativeItems(content: string): PlanItem[] {
         if (TRAILING_ACTIVITY_WORDS.includes(particleStripped)) {
           items.push({ time: currentTimeMarker, place: null, activity: particleStripped, stated_cost: null, description: null });
           lastActivitySource = "explicit";
-        } else if (particleStripped.length >= 2) {
+        } else if (
+          particleStripped.length >= 2 &&
+          !(matchedSuffix !== null && WEAK_PLACE_PARTICLES.has(matchedSuffix))
+        ) {
+          // 이/가/은/는으로 떨어진 어절은 새 place로 만들지 않는다 —
+          // "보내는"→"보내"처럼 동사 활용형이 장소로 오추출되는 걸
+          // 막기 위함이다(WEAK_PLACE_PARTICLES 정의 참고).
           items.push({ time: currentTimeMarker, place: particleStripped, activity: null, stated_cost: null, description: null });
           lastActivitySource = null;
         }
@@ -491,6 +734,10 @@ function extractNarrativeItems(content: string): PlanItem[] {
         items.push({ time: currentTimeMarker, place: cleaned, activity: null, stated_cost: null, description: null });
         lastActivitySource = null;
       }
+    }
+
+    if (inlineCostMatch !== null && items.length > itemCountBeforeSentence) {
+      items[items.length - 1].stated_cost = inlineCostMatch[0];
     }
   }
 
@@ -545,9 +792,42 @@ function parseDashLine(line: string): PlanItem[] {
   return items;
 }
 
+// "- 오전 10:30 부산역 도착"처럼 줄마다 "- "로 시작하는 불릿 목록.
+// 기존 dash 형식("10:00 부산역 도착 - 교통비 20,000원")은 한 줄 *안에서*
+// " - "로 항목을 나누는 것이고, 이 불릿 형식은 줄 *맨 앞*에 "- "가
+// 붙는 것이라 서로 다른 형식이다. 줄바꿈이 정규식 \s에 포함되기 때문에
+// 뒤 줄의 선행 "- "가 우연히 "\s-\s"에 걸려 기존 hasDashList 판정이
+// 이 형식을 잘못 dash 형식으로 오인했었다 — 그래서 불릿 판정을 dash
+// 판정보다 먼저 한다. 문단의 모든 줄이 불릿으로 시작할 때만 이 형식으로
+// 인정해, 불릿이 하나도 없거나 일부만 있는 경우와 헷갈리지 않는다.
+const BULLET_LINE_PATTERN = /^[-*•]\s+/;
+
+function isBulletList(lines: string[]): boolean {
+  return lines.length > 0 && lines.every((line) => BULLET_LINE_PATTERN.test(line));
+}
+
+/** 불릿 한 줄(선행 "- " 제거된 상태)을 item 하나로 만든다. "라벨: 설명
+ *  / 비용"(콜론+슬래시) 형식이면 그 전용 파서를 그대로 재사용하고,
+ *  아니면 "시간 + 장소[+ 활동]" 형태로 보고 parseMemoChunk에 맡긴다 —
+ *  둘 다 이미 검증된 로직이라 새로 만들지 않는다. */
+function parseBulletLine(line: string): PlanItem {
+  const trimmed = line.trim();
+
+  const labeledSlash = parseLabeledSlashLine(trimmed);
+  if (labeledSlash !== null) return labeledSlash;
+
+  return parseMemoChunk(trimmed);
+}
+
 function parseDayBody(body: string): PlanItem[] {
   const withoutHeaderLine = body.replace(DAY_MARKER, "").trim();
   const content = withoutHeaderLine || body.trim();
+
+  const contentLines = content.split(/\n/).map((l) => l.trim()).filter(Boolean);
+
+  if (isBulletList(contentLines)) {
+    return contentLines.map((line) => parseBulletLine(line.replace(BULLET_LINE_PATTERN, "")));
+  }
 
   const hasDashList = /\s-\s|\s–\s|\s—\s/.test(content);
 
