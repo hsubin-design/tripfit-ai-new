@@ -5,8 +5,8 @@ import AppHeader from "@/components/AppHeader";
 
 const TOAST_DURATION_MS = 2500;
 
-const MIN_LEN = 50;
-const MAX_LEN = 6000;
+export const MIN_LEN = 50;
+export const MAX_LEN = 6000;
 
 // 전체 입력값(trim)이 URL 하나뿐인지 판정한다. 일정 텍스트 안에 URL이
 // 섞여 있는 경우(예: "해운대 방문 후 https://... 참고")는 이 패턴에

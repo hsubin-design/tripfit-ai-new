@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import StepInput from "@/components/StepInput";
+import { useEffect, useRef, useState } from "react";
+import StepInput, { MAX_LEN, MIN_LEN } from "@/components/StepInput";
 import StepProcessing from "@/components/StepProcessing";
 import StepResult from "@/components/StepResult";
 import StepDecision from "@/components/StepDecision";
@@ -10,6 +10,20 @@ import StepRating from "@/components/StepRating";
 import StepComplete from "@/components/StepComplete";
 import { buildDummyComparisonResult } from "@/lib/dummyComparison";
 import { SAMPLE_PLAN_A_TEXT, SAMPLE_PLAN_B_TEXT } from "@/lib/sampleData";
+import {
+  initAnalytics,
+  trackComparisonCompleted,
+  trackComparisonRequested,
+  trackComparisonStarted,
+  trackComparisonViewed,
+  trackDecisionCriterionSelected,
+  trackDecisionReasonSubmitted,
+  trackDecisionSubmitted,
+  trackHelpfulnessSubmitted,
+  trackOriginalReopened,
+  trackPlanReady,
+  trackSampleLoaded,
+} from "@/lib/analytics";
 import type { ComparisonCriterionId, ComparisonResult, Decision, InputMode } from "@/types/plan";
 
 type Step = "input" | "processing" | "result" | "decision" | "reason" | "rating" | "complete";
@@ -27,40 +41,97 @@ export default function Home() {
   const [reasonText, setReasonText] = useState("");
   const [helpfulness, setHelpfulness] = useState<number | null>(null);
 
+  // 비교 세션(계측 퍼널) 타이밍/중복 방지 상태 — 화면 렌더링과 무관해
+  // state가 아니라 ref로 둔다.
+  const comparisonStartedAtRef = useRef(0);
+  const processingStartedAtRef = useRef(0);
+  const planAReadyFiredRef = useRef(false);
+  const planBReadyFiredRef = useRef(false);
+
+  useEffect(() => {
+    initAnalytics();
+    startComparisonSession();
+  }, []);
+
+  function startComparisonSession() {
+    comparisonStartedAtRef.current = Date.now();
+    planAReadyFiredRef.current = false;
+    planBReadyFiredRef.current = false;
+    trackComparisonStarted();
+  }
+
+  function isPlanReady(text: string) {
+    return text.length >= MIN_LEN && text.length <= MAX_LEN;
+  }
+
   function handleChangeA(v: string) {
     setPlanAText(v);
     setInputMode("own_plan");
+    if (!planAReadyFiredRef.current && isPlanReady(v)) {
+      planAReadyFiredRef.current = true;
+      trackPlanReady("a", "own_plan");
+    }
   }
   function handleChangeB(v: string) {
     setPlanBText(v);
     setInputMode("own_plan");
+    if (!planBReadyFiredRef.current && isPlanReady(v)) {
+      planBReadyFiredRef.current = true;
+      trackPlanReady("b", "own_plan");
+    }
   }
 
   function handleLoadSample() {
     setPlanAText(SAMPLE_PLAN_A_TEXT);
     setPlanBText(SAMPLE_PLAN_B_TEXT);
     setInputMode("sample");
+    trackSampleLoaded(1);
+    if (!planAReadyFiredRef.current) {
+      planAReadyFiredRef.current = true;
+      trackPlanReady("a", "sample");
+    }
+    if (!planBReadyFiredRef.current) {
+      planBReadyFiredRef.current = true;
+      trackPlanReady("b", "sample");
+    }
   }
 
   function handleSubmitInput() {
+    trackComparisonRequested(inputMode ?? "own_plan");
+    processingStartedAtRef.current = Date.now();
     setStep("processing");
   }
 
   function handleProcessingComplete() {
     setComparisonResult(buildDummyComparisonResult(planAText, planBText));
+    trackComparisonViewed(Date.now() - processingStartedAtRef.current);
     setStep("result");
   }
 
-  function handleReopenOriginal() {
-    // v0.7 핵심 흐름 단계: 원문 재확인 행동은 UI로만 노출. 계측 연동은 이후 단계에서 진행.
+  function handleReopenOriginal(plan: "a" | "b") {
+    trackOriginalReopened(plan);
   }
 
   function handleDecisionSelect(d: Decision) {
     setDecision(d);
+    trackDecisionSubmitted(d);
     setStep("reason");
   }
 
+  function handleChangeCriteria(next: ComparisonCriterionId[]) {
+    const added = next.find((id) => !selectedCriteria.includes(id));
+    if (added) trackDecisionCriterionSelected(added);
+    setSelectedCriteria(next);
+  }
+
+  function handleReasonNext() {
+    if (decision) trackDecisionReasonSubmitted(decision, reasonText.trim().length);
+    setStep("rating");
+  }
+
   function handleRatingSubmit() {
+    if (helpfulness !== null) trackHelpfulnessSubmitted(helpfulness);
+    trackComparisonCompleted(Date.now() - comparisonStartedAtRef.current);
     setStep("complete");
   }
 
@@ -74,6 +145,7 @@ export default function Home() {
     setSelectedCriteria([]);
     setReasonText("");
     setHelpfulness(null);
+    startComparisonSession();
   }
 
   return (
@@ -112,10 +184,10 @@ export default function Home() {
             decision={decision}
             selectedCriteria={selectedCriteria}
             reasonText={reasonText}
-            onChangeCriteria={setSelectedCriteria}
+            onChangeCriteria={handleChangeCriteria}
             onChangeReasonText={setReasonText}
             onBack={() => setStep("decision")}
-            onNext={() => setStep("rating")}
+            onNext={handleReasonNext}
           />
         )}
 
