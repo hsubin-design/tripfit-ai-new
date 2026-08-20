@@ -1,26 +1,585 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * TripFit AI — Design tokens (docs/DESIGN.md, Soft Indigo → Primary Purple #7A2EFF)
+ * Central source of truth for color / radius / typography. Components should
+ * consume these via Tailwind utilities (bg-primary, rounded-card, ...) or the
+ * component classes defined below instead of hardcoding hex values.
+ *
+ * Border policy: nothing in this app carries a default visible border.
+ * Regions are separated by background surface (white vs. subtle gray),
+ * spacing, and typography instead. The only border-like affordance is the
+ * focus ring (see .focus-ring), shown on :focus-visible for keyboard
+ * accessibility. The one exception is the loading spinner, whose ring is the
+ * mechanism of the UI pattern itself, not a container outline.
+ *
+ * Color policy: #7A2EFF is the single Primary/Active/Selected color for the
+ * entire app (CTAs, selected tabs, selected chips, focus ring). No other
+ * purple/violet/blue/navy shade is used for an active or selected state.
+ */
+@theme {
+  /* Color: interaction — the one Primary/Active/Selected purple app-wide. */
+  --color-primary: #7a2eff;
+  --color-primary-hover: #6827d9;
+  --color-primary-soft: #f2eaff;
+  /* 상세 비교/날짜별 구성 metadata chip 전용 배경. 시간과 비용은 서로
+     다른 종류의 정보이므로 색상 체계를 구분한다 — 시간은 Primary
+     Purple 계열, 비용은 앱에 이미 쓰이던 soft blue(핵심 요약 카드의
+     gradient stop #6ea8fe와 같은 계열) 톤을 옅게 가져온 것으로, 완전히
+     새로운 원색을 추가한 것은 아니다. 값 자체(무료/고가 등)로 색을
+     바꾸지 않는 neutral 원칙은 그대로 유지한다. */
+  --color-time-chip-bg: #f2ebff;
+  --color-cost-chip-bg: #eaf3ff;
+  --color-cost-chip-text: #2f6fed;
+  /* 비교 기준 상세 / Plan A·B segmented control 전용 토큰 — 두 탭
+     그룹이 동일한 component/style을 재사용하도록 여기서만 정의한다. */
+  --color-segmented-bg: #f5f4f7;
+  --color-tab-inactive-text: #77747d;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Color: surfaces. --color-background is the OUTER page backdrop (visible
+     on desktop, where the 430px mobile app-shell sits centered on it) —
+     deliberately more visibly gray than --color-subtle-surface so the
+     white app surface reads as a distinct "device" against it. On real
+     mobile widths (≤430px) the shell fills the viewport so this color is
+     never actually seen. */
+  --color-background: #e9e9ed;
+  --color-surface: #ffffff;
+  /* 상세 일정 카드와 비교 기준 상세 표 카드가 한때 서로 다른 밝기의
+     Neutral을 썼는데, 화면에서는 그 차이가 "의도된 hierarchy"가 아니라
+     "카드마다 배경색이 어긋난 것"처럼 보였다. 두 카드 모두 이 토큰
+     하나로 통일하고, 역할 구분은 typography/chip/icon으로만 표현한다. */
+  --color-subtle-surface: #f8f8fa;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Color: text */
+  --color-text-primary: #202124;
+  --color-text-secondary: #68666d;
+  --color-text-muted: #929097;
+
+  /* Color: border — used by the loading spinner ring and the 상세 비교
+     타임라인 connector line, never as a component outline/box border
+     anywhere else in the app. */
+  --color-border: #e7e5ea;
+
+  /* Color: status (neutral use only — never to signal a "better" plan) */
+  --color-error: #c73b4a;
+  --color-success: #32805f;
+
+  /* Color: disabled / inactive — one unified gray system app-wide.
+     Never purple/blue/navy in a disabled state. */
+  --color-disabled-bg: #eef0f3;
+  --color-disabled-text: #a6abb3;
+  --color-disabled-icon: #b6bbc2;
+
+  /* Radius */
+  --radius-btn: 10px;
+  --radius-input: 10px;
+  --radius-card: 12px;
+  --radius-container: 16px;
+  --radius-pill: 999px;
+
+  /* Typography */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+/* Reusable component-level styles shared across step screens. */
+@layer components {
+  /* Page Title — every screen's h1 (비교 결과, 어떤 일정을 선택하시겠어요? ...). */
+  .heading-page {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--color-text-primary);
+  }
+
+  /* Section Title — sub-headers within a screen (핵심 차이 요약, 일정/비용/숙소/메모, ...). */
+  .heading-card {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--color-text-primary);
+  }
+
+  .text-body {
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--color-text-primary);
+  }
+
+  /* Secondary body — subtitle/description text under a page title. */
+  .text-body-secondary {
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--color-text-secondary);
+  }
+
+  .text-caption {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--color-text-secondary);
+  }
+
+  /* Shared focus ring — the only border-like affordance in the system.
+     Apply alongside any interactive element that lost its default border. */
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+
+  /* No border — a card is set apart from the page by background alone.
+     Default is white; add bg-subtle-surface where a card sits directly on
+     a white parent and needs to read as a distinct region. */
+  .card {
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+
+  .field {
+    width: 100%;
+    border-radius: var(--radius-input);
+    background: var(--color-subtle-surface);
+    color: var(--color-text-primary);
+    outline: none;
+    transition: box-shadow 0.15s ease;
+  }
+  .field::placeholder {
+    color: var(--color-text-muted);
+  }
+  .field:focus {
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+
+  /* Primary CTA — 두 일정 비교하기 / 다음 / 제출하기 / 다음: 결정하기, etc. */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 24px;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: var(--color-primary);
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 600;
+    transition: background-color 0.15s ease;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+  }
+  .btn-primary:disabled {
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-text);
+    cursor: not-allowed;
+  }
+
+  /* Choice / secondary button — Plan A / Plan B selection, "새로 비교하기",
+     and other non-primary actions. No border; rests on a subtle gray
+     surface and switches to primary-tinted text on hover. */
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 24px;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: var(--color-subtle-surface);
+    color: var(--color-text-secondary);
+    font-size: 16px;
+    font-weight: 600;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .btn-secondary:hover {
+    color: var(--color-primary);
+  }
+  .btn-secondary:disabled {
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-text);
+    cursor: not-allowed;
+  }
+
+  /* Top-left back navigation — chevron-left icon only, no text, no
+     border. Identical size/position on every screen, and visually
+     identical across every interaction state (hover/active/focus) — no
+     background, shadow, scale, or opacity change, and no color change
+     either (purple is reserved for Primary/Active/Selected state, see
+     color policy note at the top of this file, and "back" isn't a
+     selection). Deliberately doesn't use the shared .focus-ring
+     (Purple box-shadow) for this reason — the browser's own default
+     focus-visible outline is enough for keyboard accessibility here. */
+  .back-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin-left: -10px;
+    border-radius: var(--radius-btn);
+    background: transparent;
+    color: var(--color-text-primary);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-subtle-surface);
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .chip[data-selected="true"] {
+    background: var(--color-primary);
+    color: #ffffff;
+  }
+
+  /* Rating scale button (1–5). Same unselected/selected language as .chip. */
+  .rating-button {
+    display: flex;
+    height: 48px;
+    width: 48px;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-subtle-surface);
+    color: var(--color-text-secondary);
+    font-size: 16px;
+    font-weight: 600;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .rating-button:hover {
+    color: var(--color-primary);
+  }
+  .rating-button[data-selected="true"] {
+    background: var(--color-primary);
+    color: #ffffff;
+  }
+
+  .accordion {
+    border-radius: var(--radius-card);
+    background: var(--color-subtle-surface);
+    overflow: hidden;
+  }
+  .accordion-trigger {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+  }
+  .accordion-panel {
+    padding: 0 16px 12px;
+  }
+
+  /* Result screen 1차 tab (핵심 요약/상세 비교) — full-width underline nav,
+     one level above the 2차 pill tab below it. Selected state is shown
+     only by the bottom indicator line, never by text color — both tabs'
+     text stays the same black/text-primary at all times, so purple stays
+     reserved for the indicator, CTAs, and 2차 selected states. */
+  .tab-underline-group {
+    position: relative;
+    display: flex;
+    width: 100%;
+  }
+  /* Full-width gray baseline under both tabs — reuses the disabled-gray
+     token as a subtle neutral divider, not the removed default borders. */
+  .tab-underline-group::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: var(--color-disabled-bg);
+  }
+  .tab-underline {
+    position: relative;
+    flex: 1 1 0%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding-bottom: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    background: transparent;
+  }
+  /* Purple indicator for the selected half — layered above the gray
+     baseline (z-index) so it reads as one continuous overlapping line.
+     This is the only signal for selection; tab text never turns purple
+     or changes weight — black text + purple underline only. */
+  .tab-underline[data-active="true"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: var(--color-primary);
+    z-index: 1;
+  }
+
+  /* Result screen 2차 segmented control (비교 기준 상세 4-tab, 플랜
+     A/B) — one level below the 1차 underline tab above it. Both usages
+     share this exact class pair so their selected/unselected language
+     stays identical. Selection reads as a white pill floating on a
+     light-gray track, not a filled Primary background — Primary Purple
+     stays reserved for selected tab text, the 1차 underline, and the
+     bottom CTA (see color policy note at the top of this file). */
+  .tab-pill-group {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: var(--radius-pill);
+    background: var(--color-segmented-bg);
+  }
+  .tab-pill {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-pill);
+    padding: 0 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-tab-inactive-text);
+    background: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .tab-pill[data-active="true"] {
+    background: #ffffff;
+    color: var(--color-primary);
+    font-weight: 600;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  }
+
+  /* Fixed bottom CTA bar, shared by every step screen with a forward CTA
+     (입력/이유/평가/결과). Separated from scrolling content by its own
+     opaque surface only — no border-top, no shadow, no divider line. */
+  .bottom-cta-bar {
+    background: var(--color-surface);
+    border: none;
+    box-shadow: none;
+    padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* Fixed top header bar (AppHeader) — same fixed/mx-auto/max-w-[430px]
+     centering pattern as .bottom-cta-bar above it, so the white surface
+     never paints wider than the mobile app-shell column even on desktop
+     viewports where the outer strip is transparent over --color-background. */
+  .app-header-bar {
+    display: flex;
+    align-items: center;
+    height: 56px;
+    padding: 0 20px;
+    background: var(--color-surface);
+  }
+
+  /* 첫 화면 서비스 기대 조절 안내 카드 — 결과 화면 "TripFit AI가 정리한
+     핵심 요약" 카드와 같은 AI visual language(Purple → Blue)를 쓰되,
+     그 카드의 움직이는 gradient border/흰 배경은 결과 화면 전용
+     시그니처라 여기서는 쓰지 않는다. 이전에는 --color-primary-soft/
+     --color-cost-chip-bg 두 토큰을 그대로 썼더니 두 값의 밝기가 비슷해
+     거의 단색처럼 보였다 — 그래서 왼쪽(Lavender/Purple)과 오른쪽(Pale
+     Blue)의 채도·색상 차이가 육안으로 분명히 드러나도록 alpha가 있는
+     rgba 3-stop으로 다시 조정했다. border는 추가하지 않고, opacity는
+     박스 전체가 아니라 이 gradient의 alpha 값으로만 조절한다. */
+  .intro-notice-card {
+    border-radius: var(--radius-card);
+    background: linear-gradient(
+      135deg,
+      rgba(123, 44, 255, 0.14) 0%,
+      rgba(111, 78, 255, 0.11) 45%,
+      rgba(72, 133, 255, 0.11) 100%
+    );
+  }
+
+  /* CTA 위에 잠시 떴다 사라지는 안내 토스트 — 텍스트 붙여넣기만 지원한다는
+     제약, URL 단독 붙여넣기 제한을 알릴 때 쓴다. 반투명 Black + 흰
+     텍스트로, 일시적으로 뜨는 시스템 알림이라는 느낌을 주면서도 상시
+     노출되는 CTA(진한 Primary Purple 채움)와는 다른 톤이라 서로
+     혼동되지 않는다. 표시/숨김은 wrapper의 opacity 0↔1 트랜지션으로만
+     하고, 텍스트 자체는 항상 완전한 흰색이라 읽는 동안 흐려지지 않는다. */
+  .input-toast {
+    border-radius: var(--radius-btn);
+    background: rgba(20, 20, 24, 0.82);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 16px;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+  .input-toast-subtitle {
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  /* "비교 범위 안내" — AI가 결과를 만들어낸 카드가 아니라 서비스 범위를
+     알리는 보조 정보라서, AI 핵심 요약 카드의 Purple → Blue gradient는
+     쓰지 않는다(그 gradient는 AI 카드 전용 시그니처로 남겨둔다). 연한
+     Lavender/Purple 단일 톤 배경만 써서 "일반 Gray 보조 정보"보다는
+     눈에 띄되 "AI가 만든 결과"처럼 보이지 않게 한다. Red/Orange 등
+     경고색은 쓰지 않는다. */
+  .scope-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    border-radius: var(--radius-card);
+    background: #f5f0ff;
+    padding: 10px 12px;
+  }
+  .scope-notice-title {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--color-primary);
+  }
+  .scope-notice-text {
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+
+  /* "TripFit AI가 정리한 핵심 요약" card — the one place in the app that
+     uses a border, and deliberately so: a thin Purple → Indigo → Soft Blue
+     gradient outline (via padding + inner surface, not a flat
+     border-color) sets this card apart as the single AI-structured
+     summary, while the interior stays plain white so the gradient never
+     reads as a filled background. Glow stays a faint ambient shadow, never
+     a strong drop shadow — the card must not visually outweigh the
+     Primary Purple CTA. */
+  .ai-card-border {
+    position: relative;
+    border-radius: var(--radius-container);
+    padding: 1.5px;
+    background: linear-gradient(120deg, #7a2eff, #5b5bd6, #6ea8fe, #7a2eff);
+    background-size: 200% 200%;
+    box-shadow: 0 0 20px rgba(122, 46, 255, 0.08);
+    animation: ai-card-border-shift 10s ease-in-out infinite;
+  }
+  .ai-card-inner {
+    border-radius: calc(var(--radius-container) - 1.5px);
+    background: var(--color-surface);
+    padding: 20px;
+  }
+  /* Slow, subtle drift across the gradient — not a spin, not a flash. */
+  @keyframes ai-card-border-shift {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ai-card-border {
+      animation: none;
+    }
+  }
+
+  /* 처리 화면 진행 표시 — 실제 진행률을 알 수 없는 더미 처리 단계라
+     0~100% 숫자나 % 게이지를 쓰지 않고, 얼마나 걸릴지 모른다는 걸
+     그대로 보여주는 indeterminate 막대만 쓴다. Primary Purple 단색
+     하나뿐이고 gradient/glow/pulse 효과는 없다 — "AI가 무언가
+     생성 중"이 아니라 "처리 중"이라는 담백한 인상만 준다. */
+  .processing-progress-track {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    border-radius: var(--radius-pill);
+    background: var(--color-disabled-bg);
+    overflow: hidden;
+  }
+  .processing-progress-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    border-radius: var(--radius-pill);
+    background: var(--color-primary);
+    animation: processing-indeterminate 1.4s ease-in-out infinite;
+  }
+  @keyframes processing-indeterminate {
+    0% {
+      left: -40%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .processing-progress-fill {
+      animation: none;
+      left: 0;
+      width: 100%;
+    }
+  }
+
+  /* Eyebrow header inside the AI card only — gradient text, never used for
+     body copy or the checklist content below it. */
+  .ai-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.3;
+    background: linear-gradient(90deg, #7a2eff, #5b5bd6, #6ea8fe);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 상세 비교 일정 item의 시간/비용 metadata chip. "비교 기준 상세 >
+     날짜별 구성"의 시간 chip도 동일 클래스를 재사용한다 — 화면마다
+     다른 chip 스타일을 만들지 않기 위함. 값에 따라 색을 바꾸지 않는다
+     (예: 무료=초록, 고가=빨강 금지) — TripFit은 비용의 좋고 나쁨을
+     판단하지 않는다는 원칙을 chip 색상에도 그대로 적용한다. */
+  .time-chip {
+    display: inline-flex;
+    align-items: center;
+    border: none;
+    border-radius: 9px;
+    background: var(--color-time-chip-bg);
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 9px;
+    white-space: nowrap;
+  }
+  .cost-chip {
+    display: inline-flex;
+    align-items: center;
+    border: none;
+    border-radius: 9px;
+    background: var(--color-cost-chip-bg);
+    color: var(--color-cost-chip-text);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 9px;
+    white-space: nowrap;
+  }
 }

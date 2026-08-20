@@ -77,66 +77,68 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      {step === "input" && (
-        <StepInput
-          planAText={planAText}
-          planBText={planBText}
-          onChangeA={handleChangeA}
-          onChangeB={handleChangeB}
-          onLoadSample={handleLoadSample}
-          onSubmit={handleSubmitInput}
-        />
-      )}
+    <div className="min-h-dvh w-full bg-background">
+      <div className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-surface">
+        {step === "input" && (
+          <StepInput
+            planAText={planAText}
+            planBText={planBText}
+            onChangeA={handleChangeA}
+            onChangeB={handleChangeB}
+            onLoadSample={handleLoadSample}
+            onSubmit={handleSubmitInput}
+          />
+        )}
 
-      {step === "processing" && <StepProcessing onComplete={handleProcessingComplete} />}
+        {step === "processing" && <StepProcessing onComplete={handleProcessingComplete} />}
 
-      {step === "result" && comparisonResult && (
-        <StepResult
-          result={comparisonResult}
-          planAText={planAText}
-          planBText={planBText}
-          onBack={() => setStep("input")}
-          onNext={() => setStep("decision")}
-          onReopenOriginal={handleReopenOriginal}
-        />
-      )}
+        {step === "result" && comparisonResult && (
+          <StepResult
+            result={comparisonResult}
+            planAText={planAText}
+            planBText={planBText}
+            onBack={() => setStep("input")}
+            onNext={() => setStep("decision")}
+            onReopenOriginal={handleReopenOriginal}
+          />
+        )}
 
-      {step === "decision" && (
-        <StepDecision onSelect={handleDecisionSelect} onBack={() => setStep("result")} />
-      )}
+        {step === "decision" && (
+          <StepDecision onSelect={handleDecisionSelect} onBack={() => setStep("result")} />
+        )}
 
-      {step === "reason" && decision && (
-        <StepReason
-          decision={decision}
-          selectedCriteria={selectedCriteria}
-          reasonText={reasonText}
-          onChangeCriteria={setSelectedCriteria}
-          onChangeReasonText={setReasonText}
-          onBack={() => setStep("decision")}
-          onNext={() => setStep("rating")}
-        />
-      )}
+        {step === "reason" && decision && (
+          <StepReason
+            decision={decision}
+            selectedCriteria={selectedCriteria}
+            reasonText={reasonText}
+            onChangeCriteria={setSelectedCriteria}
+            onChangeReasonText={setReasonText}
+            onBack={() => setStep("decision")}
+            onNext={() => setStep("rating")}
+          />
+        )}
 
-      {step === "rating" && (
-        <StepRating
-          score={helpfulness}
-          onChangeScore={setHelpfulness}
-          onBack={() => setStep("reason")}
-          onSubmit={handleRatingSubmit}
-        />
-      )}
+        {step === "rating" && (
+          <StepRating
+            score={helpfulness}
+            onChangeScore={setHelpfulness}
+            onBack={() => setStep("reason")}
+            onSubmit={handleRatingSubmit}
+          />
+        )}
 
-      {step === "complete" && (
-        <StepComplete
-          inputMode={inputMode}
-          decision={decision}
-          selectedCriteria={selectedCriteria}
-          reasonText={reasonText}
-          helpfulness={helpfulness}
-          onRestart={handleRestart}
-        />
-      )}
+        {step === "complete" && (
+          <StepComplete
+            inputMode={inputMode}
+            decision={decision}
+            selectedCriteria={selectedCriteria}
+            reasonText={reasonText}
+            helpfulness={helpfulness}
+            onRestart={handleRestart}
+          />
+        )}
+      </div>
     </div>
   );
 }
