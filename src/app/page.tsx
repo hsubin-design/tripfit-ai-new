@@ -8,6 +8,7 @@ import StepDecision from "@/components/StepDecision";
 import StepReason from "@/components/StepReason";
 import StepRating from "@/components/StepRating";
 import StepComplete from "@/components/StepComplete";
+import StepFeedback from "@/components/StepFeedback";
 import { buildDummyComparisonResult } from "@/lib/dummyComparison";
 import { SAMPLE_PLAN_A_TEXT, SAMPLE_PLAN_B_TEXT } from "@/lib/sampleData";
 import {
@@ -27,7 +28,7 @@ import {
 import { insertUtResponse } from "@/lib/supabase";
 import type { ComparisonCriterionId, ComparisonResult, Decision, InputMode } from "@/types/plan";
 
-type Step = "input" | "processing" | "result" | "decision" | "reason" | "rating" | "complete";
+type Step = "input" | "processing" | "result" | "decision" | "reason" | "rating" | "complete" | "feedback";
 
 export default function Home() {
   const [step, setStep] = useState<Step>("input");
@@ -190,8 +191,11 @@ export default function Home() {
             onChangeB={handleChangeB}
             onLoadSample={handleLoadSample}
             onSubmit={handleSubmitInput}
+            onFeedbackClick={() => setStep("feedback")}
           />
         )}
+
+        {step === "feedback" && <StepFeedback onBack={() => setStep("input")} />}
 
         {step === "processing" && <StepProcessing onComplete={handleProcessingComplete} />}
 

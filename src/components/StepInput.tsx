@@ -29,9 +29,18 @@ type Props = {
   onChangeB: (v: string) => void;
   onLoadSample: () => void;
   onSubmit: () => void;
+  onFeedbackClick: () => void;
 };
 
-export default function StepInput({ planAText, planBText, onChangeA, onChangeB, onLoadSample, onSubmit }: Props) {
+export default function StepInput({
+  planAText,
+  planBText,
+  onChangeA,
+  onChangeB,
+  onLoadSample,
+  onSubmit,
+  onFeedbackClick,
+}: Props) {
   const [touchedA, setTouchedA] = useState(false);
   const [touchedB, setTouchedB] = useState(false);
   const [toast, setToast] = useState<ToastContent | null>(null);
@@ -63,7 +72,7 @@ export default function StepInput({ planAText, planBText, onChangeA, onChangeB, 
 
   return (
     <div className="w-full">
-      <AppHeader variant="brand" />
+      <AppHeader variant="brand" onFeedbackClick={onFeedbackClick} />
 
       {/* pt-20(80px) = 모든 화면 공통 header(56px) + 콘텐츠 시작 전
           간격(24px). AppHeader가 fixed라 문서 흐름에 공간을 차지하지
