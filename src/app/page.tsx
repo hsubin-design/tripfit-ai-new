@@ -24,6 +24,7 @@ import {
   trackPlanReady,
   trackSampleLoaded,
 } from "@/lib/analytics";
+import { insertUtResponse } from "@/lib/supabase";
 import type { ComparisonCriterionId, ComparisonResult, Decision, InputMode } from "@/types/plan";
 
 type Step = "input" | "processing" | "result" | "decision" | "reason" | "rating" | "complete";
@@ -40,6 +41,8 @@ export default function Home() {
   const [selectedCriteria, setSelectedCriteria] = useState<ComparisonCriterionId[]>([]);
   const [reasonText, setReasonText] = useState("");
   const [helpfulness, setHelpfulness] = useState<number | null>(null);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [ratingSubmitError, setRatingSubmitError] = useState<string | null>(null);
 
   // 비교 세션(계측 퍼널) 타이밍/중복 방지 상태 — 화면 렌더링과 무관해
   // state가 아니라 ref로 둔다.
@@ -129,8 +132,34 @@ export default function Home() {
     setStep("rating");
   }
 
-  function handleRatingSubmit() {
-    if (helpfulness !== null) trackHelpfulnessSubmitted(helpfulness);
+  // 제출은 Supabase INSERT가 성공한 뒤에만 완료 화면으로 넘어간다 —
+  // 실패하면 화면 전환도, Mixpanel 제출 이벤트도 하지 않고 사용자가
+  // 입력/선택한 값은 그대로 유지해 재시도할 수 있게 한다. 여기서
+  // Supabase로 보내는 값에는 일정 원문(Plan A/B)이나 비교 결과가
+  // 전혀 포함되지 않는다 — insertUtResponse의 인자 타입 자체가 그
+  // 값을 받지 않는다.
+  async function handleRatingSubmit() {
+    if (helpfulness === null || decision === null) return;
+
+    setIsSubmittingRating(true);
+    setRatingSubmitError(null);
+
+    const { success } = await insertUtResponse({
+      testerMode: inputMode ?? "own_plan",
+      decision,
+      selectedCriteria,
+      decisionReason: reasonText,
+      helpfulnessScore: helpfulness,
+    });
+
+    setIsSubmittingRating(false);
+
+    if (!success) {
+      setRatingSubmitError("제출에 실패했습니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+
+    trackHelpfulnessSubmitted(helpfulness);
     trackComparisonCompleted(Date.now() - comparisonStartedAtRef.current);
     setStep("complete");
   }
@@ -145,6 +174,8 @@ export default function Home() {
     setSelectedCriteria([]);
     setReasonText("");
     setHelpfulness(null);
+    setIsSubmittingRating(false);
+    setRatingSubmitError(null);
     startComparisonSession();
   }
 
@@ -197,6 +228,8 @@ export default function Home() {
             onChangeScore={setHelpfulness}
             onBack={() => setStep("reason")}
             onSubmit={handleRatingSubmit}
+            isSubmitting={isSubmittingRating}
+            submitError={ratingSubmitError}
           />
         )}
 

@@ -7,9 +7,18 @@ type Props = {
   onChangeScore: (score: number) => void;
   onBack: () => void;
   onSubmit: () => void;
+  isSubmitting?: boolean;
+  submitError?: string | null;
 };
 
-export default function StepRating({ score, onChangeScore, onBack, onSubmit }: Props) {
+export default function StepRating({
+  score,
+  onChangeScore,
+  onBack,
+  onSubmit,
+  isSubmitting = false,
+  submitError = null,
+}: Props) {
   return (
     <div className="w-full">
       <AppHeader variant="back" onBack={onBack} />
@@ -39,13 +48,16 @@ export default function StepRating({ score, onChangeScore, onBack, onSubmit }: P
           shell's max width so the CTA never grows wider than the app itself. */}
       <div className="fixed inset-x-0 bottom-0 z-10">
         <div className="bottom-cta-bar mx-auto w-full max-w-[430px]">
+          {submitError !== null && (
+            <p className="text-error mb-2 text-[13px] leading-[1.4]">{submitError}</p>
+          )}
           <button
             type="button"
             onClick={onSubmit}
-            disabled={score === null}
+            disabled={score === null || isSubmitting}
             className="btn-primary focus-ring w-full"
           >
-            제출하기
+            {isSubmitting ? "제출 중..." : "제출하기"}
           </button>
         </div>
       </div>
