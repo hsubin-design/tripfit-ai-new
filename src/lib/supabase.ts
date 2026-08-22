@@ -39,3 +39,23 @@ export async function insertUtResponse(input: UtResponseInput): Promise<{ succes
 
   return { success: !error };
 }
+
+export type ServiceFeedbackInput = {
+  feedbackText: string;
+  sourceScreen: string;
+};
+
+/** 일반 의견 하나를 tripfit_service_feedback에 저장한다. created_at은
+ *  DB default를 쓰므로 여기서 만들지 않는다. insertUtResponse와 동일한
+ *  이유로 일정 원문/비교 결과를 받는 필드 자체가 없다. */
+export async function insertServiceFeedback(input: ServiceFeedbackInput): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  const { error } = await supabase.from("tripfit_service_feedback").insert({
+    app_version: APP_VERSION,
+    feedback_text: input.feedbackText,
+    source_screen: input.sourceScreen,
+  });
+
+  return { success: !error };
+}

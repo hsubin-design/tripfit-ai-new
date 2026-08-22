@@ -83,3 +83,22 @@ export function trackHelpfulnessSubmitted(score: number) {
 export function trackComparisonCompleted(timeToCompleteMs: number) {
   track("comparison_completed", { time_to_complete_ms: timeToCompleteMs });
 }
+
+// 의견 보내기 이벤트는 요구사항에 "0.7"(접두 v 없이)로 명시돼 있어,
+// 기존 이벤트들이 쓰는 APP_VERSION("v0.7")과 형식이 다르다 — 기존
+// 이벤트의 값/포맷은 그대로 두고 이 두 이벤트에서만 별도 리터럴을
+// 쓴다. feedback_text 원문은 어떤 이벤트에도 실어 보내지 않는다(가드
+// 레일) — 아래 두 함수의 인자 자체에 원문을 받는 자리가 없다.
+const FEEDBACK_APP_VERSION = "0.7";
+
+export function trackFeedbackOpened(sourceScreen: string) {
+  track("feedback_opened", { source_screen: sourceScreen, app_version: FEEDBACK_APP_VERSION });
+}
+
+export function trackFeedbackSubmitted(sourceScreen: string, feedbackLength: number) {
+  track("feedback_submitted", {
+    source_screen: sourceScreen,
+    app_version: FEEDBACK_APP_VERSION,
+    feedback_length: feedbackLength,
+  });
+}
