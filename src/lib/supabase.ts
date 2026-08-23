@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { ComparisonCriterionId, Decision, InputMode } from "@/types/plan";
+import { APP_VERSION } from "@/lib/appVersion";
 
 // 브라우저에 노출돼도 안전한 anon/publishable key만 쓴다 — service_role/
 // secret key/DB 비밀번호는 여기 들어오면 안 된다. 두 테이블 모두 RLS로
@@ -9,8 +10,6 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-
-const APP_VERSION = "0.7";
 
 export type UtResponseInput = {
   testerMode: InputMode;

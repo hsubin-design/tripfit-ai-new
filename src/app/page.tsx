@@ -9,11 +9,13 @@ import StepReason from "@/components/StepReason";
 import StepRating from "@/components/StepRating";
 import StepComplete from "@/components/StepComplete";
 import StepFeedback from "@/components/StepFeedback";
-import { buildDummyComparisonResult } from "@/lib/dummyComparison";
+import { buildComparison } from "@/lib/dummyComparison";
+import { requestPlanStructuring, StructuringError } from "@/lib/structurePlans";
 import { SAMPLE_PLAN_A_TEXT, SAMPLE_PLAN_B_TEXT } from "@/lib/sampleData";
 import {
   initAnalytics,
   trackComparisonCompleted,
+  trackComparisonFailed,
   trackComparisonRequested,
   trackComparisonStarted,
   trackComparisonViewed,
@@ -38,6 +40,7 @@ export default function Home() {
   const [inputMode, setInputMode] = useState<InputMode | null>(null);
 
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
+  const [structuringError, setStructuringError] = useState<string | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [selectedCriteria, setSelectedCriteria] = useState<ComparisonCriterionId[]>([]);
   const [reasonText, setReasonText] = useState("");
@@ -103,13 +106,37 @@ export default function Home() {
   function handleSubmitInput() {
     trackComparisonRequested(inputMode ?? "own_plan");
     processingStartedAtRef.current = Date.now();
+    setStructuringError(null);
     setStep("processing");
   }
 
-  function handleProcessingComplete() {
-    setComparisonResult(buildDummyComparisonResult(planAText, planBText));
-    trackComparisonViewed(Date.now() - processingStartedAtRef.current);
-    setStep("result");
+  // 실제 구조화(LLM 호출)는 여기서 수행한다. 성공하면 기존
+  // buildComparison(변경 없음)에 그대로 넘긴다 — 비교 로직/결과 UI는
+  // 파서가 규칙 기반이든 LLM이든 PlanStructure 모양만 같으면 그대로
+  // 동작한다. 실패하면 더미 파서로 조용히 대체하지 않고, 오류를
+  // StepProcessing에 보여준 채로 입력값(planAText/planBText)은 그대로
+  // 유지해 재시도할 수 있게 한다.
+  async function handleProcessingComplete() {
+    try {
+      const { planA, planB } = await requestPlanStructuring(planAText, planBText);
+      setComparisonResult(buildComparison(planA, planB));
+      trackComparisonViewed(Date.now() - processingStartedAtRef.current);
+      setStructuringError(null);
+      setStep("result");
+    } catch (error) {
+      const errorType = error instanceof StructuringError ? error.type : "unknown";
+      const message =
+        error instanceof StructuringError
+          ? error.message
+          : "일정을 구조화하지 못했어요. 잠시 후 다시 시도해주세요.";
+      trackComparisonFailed(errorType);
+      setStructuringError(message);
+    }
+  }
+
+  function handleRetryProcessing() {
+    processingStartedAtRef.current = Date.now();
+    setStructuringError(null);
   }
 
   function handleReopenOriginal(plan: "a" | "b") {
@@ -171,6 +198,7 @@ export default function Home() {
     setPlanBText("");
     setInputMode(null);
     setComparisonResult(null);
+    setStructuringError(null);
     setDecision(null);
     setSelectedCriteria([]);
     setReasonText("");
@@ -197,7 +225,17 @@ export default function Home() {
 
         {step === "feedback" && <StepFeedback onBack={() => setStep("input")} />}
 
-        {step === "processing" && <StepProcessing onComplete={handleProcessingComplete} />}
+        {step === "processing" && (
+          <StepProcessing
+            onComplete={handleProcessingComplete}
+            error={structuringError}
+            onRetry={handleRetryProcessing}
+            onBack={() => {
+              setStructuringError(null);
+              setStep("input");
+            }}
+          />
+        )}
 
         {step === "result" && comparisonResult && (
           <StepResult

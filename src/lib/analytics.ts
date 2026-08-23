@@ -1,9 +1,8 @@
 import mixpanel from "mixpanel-browser";
 import type { ComparisonCriterionId, Decision, InputMode } from "@/types/plan";
+import { APP_VERSION } from "@/lib/appVersion";
 
 let initialized = false;
-
-const APP_VERSION = "v0.7";
 
 /**
  * autocapture/session replay/기본 pageview 자동 이벤트는 모두 끈다 —
@@ -38,7 +37,7 @@ function track(event: string, props?: Record<string, unknown>) {
 export function trackComparisonStarted() {
   if (!initialized) return;
   track("comparison_started", {
-    app_version: APP_VERSION,
+    app_version: `v${APP_VERSION}`,
     participant_id: mixpanel.get_distinct_id(),
     device_type: getDeviceType(),
   });
@@ -64,6 +63,13 @@ export function trackOriginalReopened(plan: "a" | "b") {
   track("original_reopened", { plan });
 }
 
+// PRD 9번(Mixpanel 이벤트 표)에 이미 정의돼 있던 `comparison_failed`
+// (error_type) — M2 이전에는 구조화가 실패할 수 없어(더미 파서) 쓰이지
+// 않았고, 이제 실제 LLM 호출이 실패할 수 있으므로 연결한다.
+export function trackComparisonFailed(errorType: string) {
+  track("comparison_failed", { error_type: errorType });
+}
+
 export function trackDecisionSubmitted(decision: Decision) {
   track("decision_submitted", { decision });
 }
@@ -85,20 +91,18 @@ export function trackComparisonCompleted(timeToCompleteMs: number) {
 }
 
 // 의견 보내기 이벤트는 요구사항에 "0.7"(접두 v 없이)로 명시돼 있어,
-// 기존 이벤트들이 쓰는 APP_VERSION("v0.7")과 형식이 다르다 — 기존
-// 이벤트의 값/포맷은 그대로 두고 이 두 이벤트에서만 별도 리터럴을
-// 쓴다. feedback_text 원문은 어떤 이벤트에도 실어 보내지 않는다(가드
-// 레일) — 아래 두 함수의 인자 자체에 원문을 받는 자리가 없다.
-const FEEDBACK_APP_VERSION = "0.7";
-
+// comparison_started가 쓰는 형식("v0.7")과 다르다 — 값의 출처(APP_VERSION)는
+// 하나로 공유하되, 접두사 유무만 이벤트별로 다르게 붙인다. feedback_text
+// 원문은 어떤 이벤트에도 실어 보내지 않는다(가드레일) — 아래 두 함수의
+// 인자 자체에 원문을 받는 자리가 없다.
 export function trackFeedbackOpened(sourceScreen: string) {
-  track("feedback_opened", { source_screen: sourceScreen, app_version: FEEDBACK_APP_VERSION });
+  track("feedback_opened", { source_screen: sourceScreen, app_version: APP_VERSION });
 }
 
 export function trackFeedbackSubmitted(sourceScreen: string, feedbackLength: number) {
   track("feedback_submitted", {
     source_screen: sourceScreen,
-    app_version: FEEDBACK_APP_VERSION,
+    app_version: APP_VERSION,
     feedback_length: feedbackLength,
   });
 }
