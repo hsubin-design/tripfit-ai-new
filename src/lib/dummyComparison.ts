@@ -876,14 +876,86 @@ export function parsePlanText(text: string): PlanStructure {
   };
 }
 
-function collectPlaces(plan: PlanStructure): string[] {
-  const places = new Set<string>();
+// 장소 비교(canonical) 전용 — QA7: 같은 장소가 한/영 병기나 표기 순서
+// 차이("서울숲(Seoul Forest)" ↔ "Seoul Forest", "Starfield Library @
+// COEX" ↔ "COEX Starfield Library")로 다르게 적혀 있으면 common_places/
+// unique_to_a/unique_to_b가 실제보다 부풀려지는 문제가 있었다. 여기서
+// 만드는 key는 오직 "같은 장소인지" 판정에만 쓰고, 화면에 보여주는
+// item.place 원문이나 일정 항목 수는 절대 바꾸지 않는다.
+//
+// 허용 범위(요구사항에 명시된 것만, LLM 재판단이나 alias 사전 없이 —
+// 입력 문자열 자체에 있는 정보만 사용):
+// 1) 공백 정리, 영문 대소문자 무시
+// 2) "(" ")" "-" "@" 는 토큰 구분자로 취급(제거)
+// 3) 토큰을 정렬해서 비교 — 같은 단어 집합이 순서만 다르면
+//    ("Starfield Library @ COEX" ↔ "COEX Starfield Library") 동일 취급.
+//    단 "정렬 후 비교"는 집합이 완전히 같을 때만 같아지므로, 한쪽에
+//    없는 단어가 있으면(부분 포함) 여전히 다른 장소로 남는다 — "COEX"와
+//    "Starfield Library @ COEX"가 합쳐지지 않고, "성수동"과 "성수동
+//    연무장길"도 합쳐지지 않는 이유가 이것이다(둘 다 substring 포함
+//    여부가 아니라 "전체 토큰 집합이 같은가"로만 판정).
+// 4) "X(Y)" 형태로 괄호 안에 다른 이름이 병기된 경우에만 X 전체, Y
+//    전체 각각을 별도 후보로도 인정한다("서울역" ↔ "Seoul Station(서울역)"
+//    처럼 한쪽엔 한 이름만 있는 경우를 잡기 위함). 괄호가 없으면 이
+//    후보들은 생기지 않으므로, "-"/"@"는 괄호와 달리 독립 후보를
+//    만들지 않는다 — 그래야 "동대문 - 신당"처럼 그냥 대시로 이어 쓴
+//    다른 두 장소를 별칭 관계로 착각해 합치는 사고를 막을 수 있다.
+function tokenizeForComparison(text: string): string {
+  return text
+    .replace(/[()\-@]/g, " ")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+
+const PARENTHETICAL_ALIAS_PATTERN = /^(.*?)\(([^()]+)\)\s*$/;
+
+function canonicalPlaceKeys(rawLabel: string): string[] {
+  const trimmed = rawLabel.trim();
+  const keys = new Set<string>();
+
+  const wholeKey = tokenizeForComparison(trimmed);
+  if (wholeKey) keys.add(wholeKey);
+
+  const aliasMatch = trimmed.match(PARENTHETICAL_ALIAS_PATTERN);
+  if (aliasMatch) {
+    const outerKey = tokenizeForComparison(aliasMatch[1]);
+    const innerKey = tokenizeForComparison(aliasMatch[2]);
+    if (outerKey) keys.add(outerKey);
+    if (innerKey) keys.add(innerKey);
+  }
+
+  return Array.from(keys);
+}
+
+type CanonicalLabel = { label: string; keys: string[] };
+
+function hasSharedKey(keys: string[], index: Set<string>): boolean {
+  return keys.some((k) => index.has(k));
+}
+
+// 같은 플랜 안에서도 같은 장소가 "서울역"/"Seoul Station(서울역)"처럼
+// 서로 다른 표기로 여러 번 등장할 수 있다 — 그 경우 일정 item은 각각
+// 그대로 두고(항목 수도 그대로), 장소 "집합"을 만들 때만 canonical
+// key가 같으면 하나로 묶는다. 대표 라벨은 먼저 등장한 원문 표기를
+// 그대로 쓸 뿐 새로 만들지 않는다.
+function collectCanonicalPlaces(plan: PlanStructure): CanonicalLabel[] {
+  const seenKeys = new Set<string>();
+  const result: CanonicalLabel[] = [];
   for (const day of plan.days) {
     for (const item of day.items) {
-      if (item.place) places.add(item.place.trim());
+      if (!item.place) continue;
+      const label = item.place.trim();
+      const keys = canonicalPlaceKeys(label);
+      if (hasSharedKey(keys, seenKeys)) continue;
+      keys.forEach((k) => seenKeys.add(k));
+      result.push({ label, keys });
     }
   }
-  return Array.from(places);
+  return result;
 }
 
 function countMissing(plan: PlanStructure) {
@@ -904,15 +976,24 @@ function truncateList(list: string[], max = 3): string {
 }
 
 // 한 일차의 장소/활동 라벨. place가 없으면 activity를 쓴다 — "일정 몇
-// 개"가 아니라 "무엇이 있는지"로 비교하기 위한 단위.
-function dayLabels(day: PlanDay | undefined): string[] {
+// 개"가 아니라 "무엇이 있는지"로 비교하기 위한 단위. canonicalPlaceKeys를
+// 그대로 재사용해 place든 activity든 같은 정규화 규칙으로 비교한다 —
+// activity 문자열("도착", "점심" 등)은 대개 괄호/대시가 없어 wholeKey
+// 하나만 생기므로 기존 정확 일치와 동작이 같다(회귀 위험 없음).
+function dayLabelEntries(day: PlanDay | undefined): CanonicalLabel[] {
   if (!day) return [];
-  const labels: string[] = [];
+  const seenKeys = new Set<string>();
+  const result: CanonicalLabel[] = [];
   for (const item of day.items) {
-    const label = item.place ?? item.activity;
-    if (label) labels.push(label.trim());
+    const raw = item.place ?? item.activity;
+    if (!raw) continue;
+    const label = raw.trim();
+    const keys = canonicalPlaceKeys(label);
+    if (hasSharedKey(keys, seenKeys)) continue;
+    keys.forEach((k) => seenKeys.add(k));
+    result.push({ label, keys });
   }
-  return labels;
+  return result;
 }
 
 /** "전체 장소가 같다"와 "일차별 구성이 같다"는 다른 질문이다. 같은
@@ -925,16 +1006,16 @@ function buildDailyComparison(planA: PlanStructure, planB: PlanStructure): Daily
   const result: DailyPlaceComparison[] = [];
 
   for (let i = 0; i < dayCount; i++) {
-    const labelsA = dayLabels(planA.days[i]);
-    const labelsB = dayLabels(planB.days[i]);
-    const setA = new Set(labelsA);
-    const setB = new Set(labelsB);
+    const entriesA = dayLabelEntries(planA.days[i]);
+    const entriesB = dayLabelEntries(planB.days[i]);
+    const keysA = new Set(entriesA.flatMap((e) => e.keys));
+    const keysB = new Set(entriesB.flatMap((e) => e.keys));
 
     result.push({
       day: i + 1,
-      common: Array.from(new Set(labelsA.filter((l) => setB.has(l)))),
-      unique_to_a: Array.from(new Set(labelsA.filter((l) => !setB.has(l)))),
-      unique_to_b: Array.from(new Set(labelsB.filter((l) => !setA.has(l)))),
+      common: entriesA.filter((e) => hasSharedKey(e.keys, keysB)).map((e) => e.label),
+      unique_to_a: entriesA.filter((e) => !hasSharedKey(e.keys, keysB)).map((e) => e.label),
+      unique_to_b: entriesB.filter((e) => !hasSharedKey(e.keys, keysA)).map((e) => e.label),
     });
   }
 
@@ -942,14 +1023,14 @@ function buildDailyComparison(planA: PlanStructure, planB: PlanStructure): Daily
 }
 
 export function buildComparison(planA: PlanStructure, planB: PlanStructure): ComparisonResult {
-  const placesA = collectPlaces(planA);
-  const placesB = collectPlaces(planB);
-  const setA = new Set(placesA);
-  const setB = new Set(placesB);
+  const placesA = collectCanonicalPlaces(planA);
+  const placesB = collectCanonicalPlaces(planB);
+  const keysA = new Set(placesA.flatMap((p) => p.keys));
+  const keysB = new Set(placesB.flatMap((p) => p.keys));
 
-  const commonPlaces = placesA.filter((p) => setB.has(p));
-  const uniqueToA = placesA.filter((p) => !setB.has(p));
-  const uniqueToB = placesB.filter((p) => !setA.has(p));
+  const commonPlaces = placesA.filter((p) => hasSharedKey(p.keys, keysB)).map((p) => p.label);
+  const uniqueToA = placesA.filter((p) => !hasSharedKey(p.keys, keysB)).map((p) => p.label);
+  const uniqueToB = placesB.filter((p) => !hasSharedKey(p.keys, keysA)).map((p) => p.label);
 
   const dailyCountsA = planA.days.map((d) => d.items.length);
   const dailyCountsB = planB.days.map((d) => d.items.length);

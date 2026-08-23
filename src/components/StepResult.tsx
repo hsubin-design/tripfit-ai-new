@@ -618,16 +618,18 @@ function DailyStructureView({ result }: { result: ComparisonResult }) {
         {comparison.daily_place_comparison.map((d) => {
           const timesA = dayTimeLabels(plans.a.days[d.day - 1]);
           const timesB = dayTimeLabels(plans.b.days[d.day - 1]);
-          // 같은 일차라도 A/B 원문에 적힌 날짜가 다를 수 있어 병합하지
-          // 않는다 — A에 날짜가 있으면 그대로 쓰고, 없으면 B의 날짜를
-          // 쓴다(둘 다 없으면 표시하지 않음).
-          const date = plans.a.days[d.day - 1]?.date ?? plans.b.days[d.day - 1]?.date ?? null;
+          // 같은 일차라도 A/B 원문에 적힌 날짜가 다를 수 있다 — 예전에는
+          // "A 날짜 없으면 B 날짜로" 하나만 골라 Day 제목 옆에 공통으로
+          // 보여줬는데, 그러면 A/B 날짜가 실제로 다른 경우에도 같은
+          // 날짜인 것처럼 오해할 수 있었다. 이제는 병합하지 않고 각
+          // 플랜 자신의 날짜만 그 플랜의 행에 붙인다 — 한쪽에 날짜가
+          // 없으면 그 플랜 쪽에만 표시를 안 할 뿐, 없는 날짜를 추정해
+          // 채우지 않는다.
+          const dateA = plans.a.days[d.day - 1]?.date ?? null;
+          const dateB = plans.b.days[d.day - 1]?.date ?? null;
           return (
             <div key={d.day}>
-              <h4 className="flex items-baseline gap-2 text-[18px] font-bold leading-[1.3] text-text-primary">
-                <span>{d.day}일차</span>
-                {date !== null && <span className="text-[14px] font-medium text-text-secondary">{date}</span>}
-              </h4>
+              <h4 className="text-[18px] font-bold leading-[1.3] text-text-primary">{d.day}일차</h4>
 
               <div className="mt-4">
                 <p className="text-[14px] font-semibold text-text-primary">장소·활동</p>
@@ -638,9 +640,9 @@ function DailyStructureView({ result }: { result: ComparisonResult }) {
 
               <div className="mt-4">
                 <p className="text-[14px] font-semibold text-text-primary">시간 정보</p>
-                <div className="mt-2 flex flex-col gap-2">
-                  <DailyTimeRow label="플랜 A" times={timesA} />
-                  <DailyTimeRow label="플랜 B" times={timesB} />
+                <div className="mt-2 flex flex-col gap-3">
+                  <DailyTimeRow label="플랜 A" date={dateA} times={timesA} />
+                  <DailyTimeRow label="플랜 B" date={dateB} times={timesB} />
                 </div>
               </div>
             </div>
@@ -651,14 +653,23 @@ function DailyStructureView({ result }: { result: ComparisonResult }) {
   );
 }
 
-function DailyTimeRow({ label, times }: { label: string; times: string[] }) {
+// label(+date)을 시간 칩 위에 별도 줄로 쌓는다 — 이전에는 "플랜 A"
+// 같은 짧은 고정폭(w-16) 라벨 옆에 칩을 나란히 뒀지만, 날짜가 붙으면
+// ("플랜 A · 26.05.11") 그 고정폭에 안 맞아 375px에서 겹치거나 칩
+// 줄과 가로로 부딪힐 수 있다. 위/아래로 쌓으면 라벨이 길어져도 칩
+// 줄바꿈(flex-wrap)과 독립적으로 자기 줄에서만 줄바꿈되므로 겹침·
+// 가로 overflow 없이 안정적이다.
+function DailyTimeRow({ label, date, times }: { label: string; date: string | null; times: string[] }) {
   return (
-    <div className="flex items-start gap-3">
-      <span className="w-16 shrink-0 text-[15px] font-medium leading-[1.4] text-text-secondary">{label}</span>
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[13px] font-semibold leading-[1.4] text-text-secondary">
+        {label}
+        {date !== null && <span className="font-medium text-text-muted"> · {date}</span>}
+      </span>
       {times.length === 0 ? (
         <span className="text-[14px] leading-[1.4] text-text-secondary">없음</span>
       ) : (
-        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {times.map((t, j) => (
             <span key={j} className="time-chip">
               {t}
@@ -697,21 +708,22 @@ function SectionBlock({ title, children }: { title: string; children: ReactNode 
 
 /** Plan A/B 공통 일차 그룹. 하루를 하나의 subtle-surface 섹션으로 묶고,
  *  그 안의 항목들을 세로 타임라인(뱃지 + 연결선)으로 잇는다. "n일차"와
- *  날짜는 한 줄에 붙이지 않고 위/아래로 분리해서 보여준다 — 날짜는
- *  원문에 실제로 있을 때만(dummyComparison의 extractDayDate) 입력된
- *  표현 그대로 노출하고, 없으면 만들지 않는다. 비교 기준 상세 표
- *  카드(ComparisonTable/DailyStructureView)와 같은 bg-subtle-surface를
- *  써서 카드 surface를 하나의 시스템으로 통일한다 — 역할 구분은 이
- *  배경색이 아니라 typography/time·cost chip/장소 아이콘으로 한다. */
+ *  날짜는 같은 행에 baseline을 맞춰 나란히 둔다(날짜는 작은 폰트 +
+ *  회색으로 보조 정보 위계) — 날짜는 원문에 실제로 있을 때만
+ *  (dummyComparison의 extractDayDate) 입력된 표현 그대로 노출하고,
+ *  없으면 만들지 않는다. 비교 기준 상세 표 카드(ComparisonTable/
+ *  DailyStructureView)와 같은 bg-subtle-surface를 써서 카드 surface를
+ *  하나의 시스템으로 통일한다 — 역할 구분은 이 배경색이 아니라
+ *  typography/time·cost chip/장소 아이콘으로 한다. */
 function ItineraryDays({ plan }: { plan: PlanStructure }) {
   return (
     <div className="flex flex-col gap-4">
       {plan.days.map((day) => (
         <div key={day.day} className="rounded-container bg-subtle-surface p-4">
-          <div className="mb-5">
+          <div className="mb-5 flex items-baseline gap-2">
             <h4 className="text-[16px] font-bold leading-[1.3] text-text-primary">{day.day}일차</h4>
             {day.date !== null && (
-              <p className="mt-0.5 text-[13px] font-medium text-text-secondary">{day.date}</p>
+              <span className="text-[13px] font-medium text-text-secondary">{day.date}</span>
             )}
           </div>
           <div className="flex flex-col">
