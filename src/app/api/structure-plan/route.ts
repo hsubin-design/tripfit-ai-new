@@ -191,13 +191,15 @@ function hasStructurableContent(plan: RawPlanStructure): boolean {
   return plan.days.some((day) => day.items.some((item) => item.place || item.activity));
 }
 
+// invalidPlans는 UI가 "플랜 A/B 수정하기"처럼 어느 플랜을 고쳐야
+// 하는지 구체적으로 안내할 수 있도록, 응답 JSON에도 그대로 실어
+// 보낸다("어느 플랜인지" 정보는 message 문자열 파싱이 아니라 이 배열로
+// 전달한다).
 class NotTravelContentError extends Error {
-  aInvalid: boolean;
-  bInvalid: boolean;
+  invalidPlans: ("a" | "b")[];
   constructor(aInvalid: boolean, bInvalid: boolean) {
     super("not_travel_content");
-    this.aInvalid = aInvalid;
-    this.bInvalid = bInvalid;
+    this.invalidPlans = [...(aInvalid ? (["a"] as const) : []), ...(bInvalid ? (["b"] as const) : [])];
   }
 }
 
@@ -293,7 +295,7 @@ function errorTypeFor(error: Error): string {
 
 function userMessageFor(error: Error): string {
   if (error instanceof NotTravelContentError) {
-    const who = error.aInvalid && error.bInvalid ? "" : error.aInvalid ? "플랜 A가 " : "플랜 B가 ";
+    const who = error.invalidPlans.length === 2 ? "" : error.invalidPlans[0] === "a" ? "플랜 A가 " : "플랜 B가 ";
     return `${who}여행 일정으로 보기 어려워요.\n방문 장소나 일정이 포함된 여행 계획을 입력해주세요.`;
   }
   if (error instanceof APIConnectionTimeoutError) {
@@ -327,8 +329,9 @@ export async function POST(request: Request) {
     // 원문/응답 전체를 로그로 남기지 않는다 — 실패 유형만 남긴다.
     console.error("[structure-plan] error_type", type);
     const status = type === "not_travel_content" ? 422 : type === "timeout" ? 504 : 502;
+    const invalidPlans = err instanceof NotTravelContentError ? err.invalidPlans : undefined;
     return NextResponse.json(
-      { error: { type, message: userMessageFor(err) } },
+      { error: { type, message: userMessageFor(err), ...(invalidPlans ? { invalidPlans } : {}) } },
       { status }
     );
   }

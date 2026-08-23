@@ -40,7 +40,18 @@ export default function Home() {
   const [inputMode, setInputMode] = useState<InputMode | null>(null);
 
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
-  const [structuringError, setStructuringError] = useState<string | null>(null);
+  // type/message/invalidPlans는 StructuringError를 그대로 옮겨 담은
+  // 것 — invalidPlans는 not_travel_content일 때만 채워지고, StepProcessing이
+  // 이 값을 보고 "플랜 A/B 수정하기" 같은 구체적 안내를 만든다.
+  const [structuringFailure, setStructuringFailure] = useState<{
+    type: string;
+    message: string;
+    invalidPlans?: ("a" | "b")[];
+  } | null>(null);
+  // not_travel_content 오류에서 "플랜 A/B 수정하기"를 누르면 입력
+  // 화면으로 돌아가면서 문제였던 입력칸에 포커스를 옮긴다 — 한 번
+  // 쓰이면 StepInput이 소비 즉시 null로 되돌린다(onAutoFocusConsumed).
+  const [focusPlan, setFocusPlan] = useState<"a" | "b" | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [selectedCriteria, setSelectedCriteria] = useState<ComparisonCriterionId[]>([]);
   const [reasonText, setReasonText] = useState("");
@@ -106,7 +117,7 @@ export default function Home() {
   function handleSubmitInput() {
     trackComparisonRequested(inputMode ?? "own_plan");
     processingStartedAtRef.current = Date.now();
-    setStructuringError(null);
+    setStructuringFailure(null);
     setStep("processing");
   }
 
@@ -121,7 +132,7 @@ export default function Home() {
       const { planA, planB } = await requestPlanStructuring(planAText, planBText);
       setComparisonResult(buildComparison(planA, planB));
       trackComparisonViewed(Date.now() - processingStartedAtRef.current);
-      setStructuringError(null);
+      setStructuringFailure(null);
       setStep("result");
     } catch (error) {
       const errorType = error instanceof StructuringError ? error.type : "unknown";
@@ -129,14 +140,24 @@ export default function Home() {
         error instanceof StructuringError
           ? error.message
           : "일정을 구조화하지 못했어요. 잠시 후 다시 시도해주세요.";
+      const invalidPlans = error instanceof StructuringError ? error.invalidPlans : undefined;
       trackComparisonFailed(errorType);
-      setStructuringError(message);
+      setStructuringFailure({ type: errorType, message, invalidPlans });
     }
   }
 
   function handleRetryProcessing() {
     processingStartedAtRef.current = Date.now();
-    setStructuringError(null);
+    setStructuringFailure(null);
+  }
+
+  // not_travel_content 전용 "플랜 A/B 수정하기" CTA. 재시도(같은 텍스트로
+  // 다시 LLM 호출)가 아니라 입력 화면으로 돌아가는 동작이다 — 텍스트
+  // 자체가 문제이므로 재시도해도 같은 결과가 나올 뿐이다.
+  function handleEditPlan(invalidPlans: ("a" | "b")[] | undefined) {
+    setStructuringFailure(null);
+    setFocusPlan(invalidPlans && invalidPlans.length === 1 ? invalidPlans[0] : null);
+    setStep("input");
   }
 
   function handleReopenOriginal(plan: "a" | "b") {
@@ -198,7 +219,8 @@ export default function Home() {
     setPlanBText("");
     setInputMode(null);
     setComparisonResult(null);
-    setStructuringError(null);
+    setStructuringFailure(null);
+    setFocusPlan(null);
     setDecision(null);
     setSelectedCriteria([]);
     setReasonText("");
@@ -220,6 +242,8 @@ export default function Home() {
             onLoadSample={handleLoadSample}
             onSubmit={handleSubmitInput}
             onFeedbackClick={() => setStep("feedback")}
+            autoFocusPlan={focusPlan}
+            onAutoFocusConsumed={() => setFocusPlan(null)}
           />
         )}
 
@@ -228,10 +252,11 @@ export default function Home() {
         {step === "processing" && (
           <StepProcessing
             onComplete={handleProcessingComplete}
-            error={structuringError}
+            error={structuringFailure}
             onRetry={handleRetryProcessing}
+            onEditPlan={handleEditPlan}
             onBack={() => {
-              setStructuringError(null);
+              setStructuringFailure(null);
               setStep("input");
             }}
           />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
 import AppHeader from "@/components/AppHeader";
 
 const TOAST_DURATION_MS = 2500;
@@ -30,6 +30,11 @@ type Props = {
   onLoadSample: () => void;
   onSubmit: () => void;
   onFeedbackClick: () => void;
+  // not_travel_content 오류에서 "플랜 A/B 수정하기"로 돌아왔을 때만
+  // 채워진다 — 문제였던 입력칸에 포커스를 옮기는 용도. 소비 즉시
+  // onAutoFocusConsumed로 부모 state를 되돌려 한 번만 동작하게 한다.
+  autoFocusPlan?: "a" | "b" | null;
+  onAutoFocusConsumed?: () => void;
 };
 
 export default function StepInput({
@@ -40,11 +45,24 @@ export default function StepInput({
   onLoadSample,
   onSubmit,
   onFeedbackClick,
+  autoFocusPlan,
+  onAutoFocusConsumed,
 }: Props) {
   const [touchedA, setTouchedA] = useState(false);
   const [touchedB, setTouchedB] = useState(false);
   const [toast, setToast] = useState<ToastContent | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const planARef = useRef<HTMLTextAreaElement>(null);
+  const planBRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!autoFocusPlan) return;
+    const ref = autoFocusPlan === "a" ? planARef : planBRef;
+    ref.current?.focus();
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    onAutoFocusConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFocusPlan]);
 
   const errorA = validate(planAText);
   const errorB = validate(planBText);
@@ -105,6 +123,7 @@ export default function StepInput({
             onBlur={() => setTouchedA(true)}
             error={touchedA ? errorA : null}
             onShowToast={showToast}
+            inputRef={planARef}
           />
           <PlanTextarea
             label="플랜 B"
@@ -113,6 +132,7 @@ export default function StepInput({
             onBlur={() => setTouchedB(true)}
             error={touchedB ? errorB : null}
             onShowToast={showToast}
+            inputRef={planBRef}
           />
         </div>
 
@@ -167,6 +187,7 @@ function PlanTextarea({
   onBlur,
   error,
   onShowToast,
+  inputRef,
 }: {
   label: string;
   value: string;
@@ -174,6 +195,7 @@ function PlanTextarea({
   onBlur: () => void;
   error: string | null;
   onShowToast: (content: ToastContent) => void;
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
 }) {
   // 클립보드/드롭에 파일(이미지 등)이 들어 있으면 텍스트만 받는다는
   // 원칙에 따라 붙여넣기/드롭 자체를 막고 토스트로 안내한다. 순수 텍스트
@@ -214,6 +236,7 @@ function PlanTextarea({
     <div className="flex flex-1 flex-col gap-1.5">
       <label className="text-body font-semibold">{label}</label>
       <textarea
+        ref={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
