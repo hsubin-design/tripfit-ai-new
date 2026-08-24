@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import AppHeader from "@/components/AppHeader";
+import { trackDecisionViewed } from "@/lib/analytics";
 import type { Decision } from "@/types/plan";
 
 type Props = {
@@ -9,6 +11,14 @@ type Props = {
 };
 
 export default function StepDecision({ onSelect, onBack }: Props) {
+  // StepFeedback의 trackFeedbackOpened와 동일한 패턴 — 이 화면이
+  // 마운트될 때만 1회 보낸다. step 전환으로 이 컴포넌트가 언마운트됐다
+  // 다시 마운트되면(예: 결과→결정→이유→뒤로가기→결정) 새 진입으로
+  // 다시 보내는 게 의도한 동작이다.
+  useEffect(() => {
+    trackDecisionViewed();
+  }, []);
+
   return (
     <div className="w-full">
       <AppHeader variant="back" onBack={onBack} />

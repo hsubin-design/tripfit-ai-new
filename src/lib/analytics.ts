@@ -81,6 +81,16 @@ export function trackComparisonFailed(errorType: string) {
   track("comparison_failed", { error_type: errorType });
 }
 
+// comparison_viewed → decision_viewed 시간 차이로 "비교 결과 화면
+// 체류시간"을 볼 수 있게 하려고 추가한 이벤트(2026-08-24) — decision
+// 화면에 결정을 내리기까지 걸리는 시간(decision_submitted와의 차이)과
+// 섞이지 않도록 결과 화면 이탈 시점을 별도로 남긴다. 결정 화면에
+// 진입할 때(mount) 1회만 보내고, 뒤로가기로 다시 들어오면 새 진입으로
+// 다시 보낸다(원문 이름/규모 등 여행 일정 관련 값은 담지 않는다).
+export function trackDecisionViewed() {
+  track("decision_viewed");
+}
+
 export function trackDecisionSubmitted(decision: Decision) {
   track("decision_submitted", { decision });
 }
