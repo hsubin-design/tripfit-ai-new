@@ -310,9 +310,7 @@ export default function Home() {
           />
         )}
 
-        {step === "feedback" && (
-          <StepFeedback onBack={() => setStep("input")} onLogoClick={handleLogoClick} />
-        )}
+        {step === "feedback" && <StepFeedback onBack={() => setStep("input")} />}
 
         {step === "processing" && (
           <StepProcessing
@@ -335,16 +333,11 @@ export default function Home() {
             onBack={() => setStep("input")}
             onNext={() => setStep("decision")}
             onReopenOriginal={handleReopenOriginal}
-            onLogoClick={handleLogoClick}
           />
         )}
 
         {step === "decision" && (
-          <StepDecision
-            onSelect={handleDecisionSelect}
-            onBack={() => setStep("result")}
-            onLogoClick={handleLogoClick}
-          />
+          <StepDecision onSelect={handleDecisionSelect} onBack={() => setStep("result")} />
         )}
 
         {step === "reason" && decision && (
@@ -356,7 +349,6 @@ export default function Home() {
             onChangeReasonText={setReasonText}
             onBack={() => setStep("decision")}
             onNext={handleReasonNext}
-            onLogoClick={handleLogoClick}
           />
         )}
 
@@ -368,7 +360,6 @@ export default function Home() {
             onSubmit={handleRatingSubmit}
             isSubmitting={isSubmittingRating}
             submitError={ratingSubmitError}
-            onLogoClick={handleLogoClick}
           />
         )}
 

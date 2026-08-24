@@ -18,7 +18,6 @@ type Props = {
   onBack: () => void;
   onNext: () => void;
   onReopenOriginal: (plan: "a" | "b") => void;
-  onLogoClick?: () => void;
 };
 
 function sumItems(counts: number[]) {
@@ -32,7 +31,6 @@ export default function StepResult({
   onBack,
   onNext,
   onReopenOriginal,
-  onLogoClick,
 }: Props) {
   const [openOriginal, setOpenOriginal] = useState<{ a: boolean; b: boolean }>({ a: false, b: false });
   const [topTab, setTopTab] = useState<"summary" | "detail">("summary");
@@ -49,7 +47,7 @@ export default function StepResult({
 
   return (
     <div className="w-full">
-      <AppHeader variant="back" onBack={onBack} onLogoClick={onLogoClick} />
+      <AppHeader variant="back" onBack={onBack} />
       <div className="flex flex-col px-5 pt-20">
         <h1 className="heading-page">일정을 비교해본 결과예요.</h1>
 
