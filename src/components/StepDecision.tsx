@@ -6,12 +6,13 @@ import type { Decision } from "@/types/plan";
 type Props = {
   onSelect: (decision: Decision) => void;
   onBack: () => void;
+  onLogoClick?: () => void;
 };
 
-export default function StepDecision({ onSelect, onBack }: Props) {
+export default function StepDecision({ onSelect, onBack, onLogoClick }: Props) {
   return (
     <div className="w-full">
-      <AppHeader variant="back" onBack={onBack} />
+      <AppHeader variant="back" onBack={onBack} onLogoClick={onLogoClick} />
       <div className="flex w-full flex-col px-5 pb-6 pt-20">
         <div className="w-full text-left">
           <h1 className="heading-page">원하시는 일정을 선택하세요.</h1>

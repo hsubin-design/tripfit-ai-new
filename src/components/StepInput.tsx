@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import AppHeader from "@/components/AppHeader";
+import { allDaysFilled } from "@/lib/planDayText";
 
 const TOAST_DURATION_MS = 2500;
 
 export const MIN_LEN = 50;
 export const MAX_LEN = 6000;
+
+// 일차별 입력 구조 실험(2026-08-24) — 여행 기간 선택지. 예시로 주어진
+// 두 개만 우선 둔다(범위를 임의로 넓히지 않음). days는 일차 textarea
+// 개수와 동일하다.
+const DURATION_OPTIONS: { label: string; days: number }[] = [
+  { label: "1박 2일", days: 2 },
+  { label: "2박 3일", days: 3 },
+];
 
 // 전체 입력값(trim)이 URL 하나뿐인지 판정한다. 일정 텍스트 안에 URL이
 // 섞여 있는 경우(예: "해운대 방문 후 https://... 참고")는 이 패턴에
@@ -15,36 +24,72 @@ const URL_ONLY_PATTERN = /^(?:https?:\/\/|www\.)\S+$/i;
 
 type ToastContent = { title: string; subtitle?: string };
 
-function validate(text: string): string | null {
-  if (text.length === 0) return null;
-  if (text.length < MIN_LEN) return `${MIN_LEN}자 이상 입력해주세요. (현재 ${text.length}자)`;
-  if (text.length > MAX_LEN) return `${MAX_LEN}자를 초과했습니다. (현재 ${text.length}자)`;
+// 글자수 정책(MIN_LEN~MAX_LEN)은 "N일차" 헤더를 붙이기 전, 사용자가
+// 실제로 일차 입력칸에 타이핑한 내용만으로 잰다 — joinDayTexts 결과
+// (API로 보내는 조합 문자열)로 재면 일차가 전부 비어 있어도 헤더
+// 글자 수("1일차\n\n\n2일차\n..." 등)만으로 카운터가 0이 아닌 값을
+// 보여주는 문제가 있었다. 실제로 보낼 문자열(joined)과 사용자에게
+// 보여줄/검증할 글자수(typedLength)를 의도적으로 분리한다.
+function typedLength(dayTexts: string[]): number {
+  return dayTexts.reduce((sum, t) => sum + t.trim().length, 0);
+}
+
+// duration이 없으면(아직 기간을 안 골랐으면) 에러를 보여주지 않는다 —
+// "기간을 먼저 선택하세요"는 CTA 비활성 상태로 충분히 전달된다. 기간을
+// 고른 뒤에는 (1) 모든 일차 입력칸이 채워졌는지 → (2) 실제 입력한
+// 글자수가 기존 정책(MIN_LEN~MAX_LEN) 안에 있는지 순서로 검사한다 —
+// 기존 정책을 새로 만들지 않고 그대로 재사용한다.
+function planError(duration: number | null, dayTexts: string[]): string | null {
+  if (duration === null) return null;
+  if (!allDaysFilled(dayTexts)) return "모든 일차에 일정을 입력해주세요.";
+  const len = typedLength(dayTexts);
+  if (len < MIN_LEN) return `${MIN_LEN}자 이상 입력해주세요. (현재 ${len}자)`;
+  if (len > MAX_LEN) return `${MAX_LEN}자를 초과했습니다. (현재 ${len}자)`;
   return null;
 }
 
+function isPlanValid(duration: number | null, dayTexts: string[]): boolean {
+  if (duration === null) return false;
+  if (!allDaysFilled(dayTexts)) return false;
+  const len = typedLength(dayTexts);
+  return len >= MIN_LEN && len <= MAX_LEN;
+}
+
 type Props = {
-  planAText: string;
-  planBText: string;
-  onChangeA: (v: string) => void;
-  onChangeB: (v: string) => void;
+  planADuration: number | null;
+  planADayTexts: string[];
+  onChangePlanADuration: (days: number) => void;
+  onChangePlanADayText: (index: number, value: string) => void;
+  planBDuration: number | null;
+  planBDayTexts: string[];
+  onChangePlanBDuration: (days: number) => void;
+  onChangePlanBDayText: (index: number, value: string) => void;
   onLoadSample: () => void;
   onSubmit: () => void;
   onFeedbackClick: () => void;
+  onLogoClick?: () => void;
   // not_travel_content 오류에서 "플랜 A/B 수정하기"로 돌아왔을 때만
-  // 채워진다 — 문제였던 입력칸에 포커스를 옮기는 용도. 소비 즉시
-  // onAutoFocusConsumed로 부모 state를 되돌려 한 번만 동작하게 한다.
+  // 채워진다 — 일차별 구조라 정확히 어느 일차가 문제인지는 알 수
+  // 없으므로, 문제였던 플랜의 1일차 입력칸에 포커스를 옮긴다. 소비
+  // 즉시 onAutoFocusConsumed로 부모 state를 되돌려 한 번만 동작하게
+  // 한다.
   autoFocusPlan?: "a" | "b" | null;
   onAutoFocusConsumed?: () => void;
 };
 
 export default function StepInput({
-  planAText,
-  planBText,
-  onChangeA,
-  onChangeB,
+  planADuration,
+  planADayTexts,
+  onChangePlanADuration,
+  onChangePlanADayText,
+  planBDuration,
+  planBDayTexts,
+  onChangePlanBDuration,
+  onChangePlanBDayText,
   onLoadSample,
   onSubmit,
   onFeedbackClick,
+  onLogoClick,
   autoFocusPlan,
   onAutoFocusConsumed,
 }: Props) {
@@ -52,25 +97,22 @@ export default function StepInput({
   const [touchedB, setTouchedB] = useState(false);
   const [toast, setToast] = useState<ToastContent | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const planARef = useRef<HTMLTextAreaElement>(null);
-  const planBRef = useRef<HTMLTextAreaElement>(null);
+  const planADayRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
+  const planBDayRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
 
   useEffect(() => {
     if (!autoFocusPlan) return;
-    const ref = autoFocusPlan === "a" ? planARef : planBRef;
-    ref.current?.focus();
-    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const refs = autoFocusPlan === "a" ? planADayRefs : planBDayRefs;
+    const first = refs.current[0];
+    first?.focus();
+    first?.scrollIntoView({ behavior: "smooth", block: "center" });
     onAutoFocusConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFocusPlan]);
 
-  const errorA = validate(planAText);
-  const errorB = validate(planBText);
-  const isValid =
-    planAText.length >= MIN_LEN &&
-    planAText.length <= MAX_LEN &&
-    planBText.length >= MIN_LEN &&
-    planBText.length <= MAX_LEN;
+  const errorA = touchedA ? planError(planADuration, planADayTexts) : null;
+  const errorB = touchedB ? planError(planBDuration, planBDayTexts) : null;
+  const isValid = isPlanValid(planADuration, planADayTexts) && isPlanValid(planBDuration, planBDayTexts);
 
   function handleSubmit() {
     setTouchedA(true);
@@ -90,7 +132,7 @@ export default function StepInput({
 
   return (
     <div className="w-full">
-      <AppHeader variant="brand" onFeedbackClick={onFeedbackClick} />
+      <AppHeader variant="brand" onFeedbackClick={onFeedbackClick} onLogoClick={onLogoClick} />
 
       {/* pt-20(80px) = 모든 화면 공통 header(56px) + 콘텐츠 시작 전
           간격(24px). AppHeader가 fixed라 문서 흐름에 공간을 차지하지
@@ -112,27 +154,31 @@ export default function StepInput({
 
         <div className="mt-7">
           <h1 className="heading-page">두 일정, 뭐가 다른지 비교해봐요.</h1>
-          <p className="text-body-secondary mt-2">형식이 달라도 TripFit AI가 같은 기준으로 정리해드려요.</p>
+          <p className="text-body-secondary mt-2">여행 기간을 고르고, 일차별로 자유롭게 적어주세요.</p>
         </div>
 
-        <div className="mt-6 flex flex-col gap-4">
-          <PlanTextarea
+        <div className="mt-6 flex flex-col gap-6">
+          <PlanSection
             label="플랜 A"
-            value={planAText}
-            onChange={onChangeA}
+            duration={planADuration}
+            dayTexts={planADayTexts}
+            onChangeDuration={onChangePlanADuration}
+            onChangeDayText={onChangePlanADayText}
             onBlur={() => setTouchedA(true)}
-            error={touchedA ? errorA : null}
+            error={errorA}
             onShowToast={showToast}
-            inputRef={planARef}
+            dayRefs={planADayRefs}
           />
-          <PlanTextarea
+          <PlanSection
             label="플랜 B"
-            value={planBText}
-            onChange={onChangeB}
+            duration={planBDuration}
+            dayTexts={planBDayTexts}
+            onChangeDuration={onChangePlanBDuration}
+            onChangeDayText={onChangePlanBDayText}
             onBlur={() => setTouchedB(true)}
-            error={touchedB ? errorB : null}
+            error={errorB}
             onShowToast={showToast}
-            inputRef={planBRef}
+            dayRefs={planBDayRefs}
           />
         </div>
 
@@ -180,22 +226,90 @@ export default function StepInput({
   );
 }
 
-function PlanTextarea({
+function PlanSection({
   label,
-  value,
-  onChange,
+  duration,
+  dayTexts,
+  onChangeDuration,
+  onChangeDayText,
   onBlur,
   error,
   onShowToast,
-  inputRef,
+  dayRefs,
 }: {
   label: string;
-  value: string;
-  onChange: (v: string) => void;
+  duration: number | null;
+  dayTexts: string[];
+  onChangeDuration: (days: number) => void;
+  onChangeDayText: (index: number, value: string) => void;
   onBlur: () => void;
   error: string | null;
   onShowToast: (content: ToastContent) => void;
-  inputRef?: RefObject<HTMLTextAreaElement | null>;
+  dayRefs: React.RefObject<Array<HTMLTextAreaElement | null>>;
+}) {
+  // React는 focus/blur를 위임(bubbling)해 전달하므로, 안의 textarea
+  // 중 아무거나 blur되면 이 onBlur가 한 번 호출된다 — 일차 textarea마다
+  // 따로 touched를 추적할 필요가 없다.
+  return (
+    <div className="flex flex-col gap-3" onBlur={onBlur}>
+      <span className="text-body font-semibold">{label}</span>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-medium text-text-secondary">여행 기간</span>
+        <div className="tab-pill-group w-full">
+          {DURATION_OPTIONS.map((opt) => (
+            <button
+              key={opt.days}
+              type="button"
+              data-active={duration === opt.days}
+              className="tab-pill focus-ring flex-1"
+              onClick={() => onChangeDuration(opt.days)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {duration !== null && (
+        <>
+          <div className="flex flex-col gap-2.5">
+            {dayTexts.map((text, i) => (
+              <DayTextarea
+                key={i}
+                dayNumber={i + 1}
+                value={text}
+                onChange={(v) => onChangeDayText(i, v)}
+                onShowToast={onShowToast}
+                inputRef={(el) => {
+                  dayRefs.current[i] = el;
+                }}
+              />
+            ))}
+          </div>
+          <div className="flex items-center justify-end">
+            <span className={`text-caption ${error ? "text-error" : ""}`}>
+              {error ?? `${typedLength(dayTexts)} / ${MAX_LEN.toLocaleString()}자`}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DayTextarea({
+  dayNumber,
+  value,
+  onChange,
+  onShowToast,
+  inputRef,
+}: {
+  dayNumber: number;
+  value: string;
+  onChange: (v: string) => void;
+  onShowToast: (content: ToastContent) => void;
+  inputRef?: (el: HTMLTextAreaElement | null) => void;
 }) {
   // 클립보드/드롭에 파일(이미지 등)이 들어 있으면 텍스트만 받는다는
   // 원칙에 따라 붙여넣기/드롭 자체를 막고 토스트로 안내한다. 순수 텍스트
@@ -233,25 +347,19 @@ function PlanTextarea({
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-1.5">
-      <label className="text-body font-semibold">{label}</label>
+    <div className="flex flex-col gap-1">
+      <span className="text-[13px] font-semibold text-text-secondary">{dayNumber}일차</span>
       <textarea
         ref={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur}
         onPaste={handlePaste}
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
-        rows={10}
-        placeholder="여행 일정 텍스트를 붙여넣어 주세요."
+        rows={3}
+        placeholder={`${dayNumber}일차 일정을 자유롭게 적어주세요.`}
         className="field text-body resize-none p-3"
       />
-      <div className="flex items-center justify-end">
-        <span className={`text-caption ${error ? "text-error" : ""}`}>
-          {error ?? `${value.length} / 6,000자`}
-        </span>
-      </div>
     </div>
   );
 }

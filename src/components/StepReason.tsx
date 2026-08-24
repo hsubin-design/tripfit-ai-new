@@ -11,6 +11,7 @@ type Props = {
   onChangeReasonText: (text: string) => void;
   onBack: () => void;
   onNext: () => void;
+  onLogoClick?: () => void;
 };
 
 export default function StepReason({
@@ -21,6 +22,7 @@ export default function StepReason({
   onChangeReasonText,
   onBack,
   onNext,
+  onLogoClick,
 }: Props) {
   const isUndecided = decision === "undecided";
   const title = isUndecided ? "결정하기 어려운 이유를 알려주세요." : "선택한 이유를 알려주세요.";
@@ -42,7 +44,7 @@ export default function StepReason({
 
   return (
     <div className="w-full">
-      <AppHeader variant="back" onBack={onBack} />
+      <AppHeader variant="back" onBack={onBack} onLogoClick={onLogoClick} />
       <div className="flex w-full flex-col px-5 pb-28 pt-20">
         <h1 className="heading-page">{title}</h1>
 

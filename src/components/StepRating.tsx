@@ -9,6 +9,7 @@ type Props = {
   onSubmit: () => void;
   isSubmitting?: boolean;
   submitError?: string | null;
+  onLogoClick?: () => void;
 };
 
 export default function StepRating({
@@ -18,10 +19,11 @@ export default function StepRating({
   onSubmit,
   isSubmitting = false,
   submitError = null,
+  onLogoClick,
 }: Props) {
   return (
     <div className="w-full">
-      <AppHeader variant="back" onBack={onBack} />
+      <AppHeader variant="back" onBack={onBack} onLogoClick={onLogoClick} />
       <div className="flex w-full flex-col px-5 pb-28 pt-20">
         <h1 className="heading-page">두 일정의 차이를 파악하는 데 얼마나 도움이 되었나요?</h1>
 

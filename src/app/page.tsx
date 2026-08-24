@@ -9,9 +9,11 @@ import StepReason from "@/components/StepReason";
 import StepRating from "@/components/StepRating";
 import StepComplete from "@/components/StepComplete";
 import StepFeedback from "@/components/StepFeedback";
+import ResetConfirmDialog from "@/components/ResetConfirmDialog";
 import { buildComparison } from "@/lib/dummyComparison";
 import { requestPlanStructuring, StructuringError } from "@/lib/structurePlans";
-import { SAMPLE_PLAN_A_TEXT, SAMPLE_PLAN_B_TEXT } from "@/lib/sampleData";
+import { SAMPLE_PLAN_A_DAY_TEXTS, SAMPLE_PLAN_B_DAY_TEXTS } from "@/lib/sampleData";
+import { joinDayTexts, resizeDayTexts } from "@/lib/planDayText";
 import {
   initAnalytics,
   trackComparisonCompleted,
@@ -35,8 +37,17 @@ type Step = "input" | "processing" | "result" | "decision" | "reason" | "rating"
 export default function Home() {
   const [step, setStep] = useState<Step>("input");
 
-  const [planAText, setPlanAText] = useState("");
-  const [planBText, setPlanBText] = useState("");
+  // 일차별 입력 구조 실험(2026-08-24) — Plan A/B는 이제 하나의 큰
+  // textarea가 아니라 "여행 기간 선택 + 일차별 자유 텍스트"로 입력받는다.
+  // planAText/planBText(구조화 API에 보내는 하나의 문자열, 결과 화면의
+  // "원문 다시보기")는 이 상태에서 매 렌더 계산해 낸다 — 기존 비교
+  // 로직/결과 화면은 이 계산된 문자열만 보고 동작하므로 변경이 없다.
+  const [planADuration, setPlanADuration] = useState<number | null>(null);
+  const [planADayTexts, setPlanADayTexts] = useState<string[]>([]);
+  const [planBDuration, setPlanBDuration] = useState<number | null>(null);
+  const [planBDayTexts, setPlanBDayTexts] = useState<string[]>([]);
+  const planAText = joinDayTexts(planADayTexts);
+  const planBText = joinDayTexts(planBDayTexts);
   const [inputMode, setInputMode] = useState<InputMode | null>(null);
 
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
@@ -58,6 +69,12 @@ export default function Home() {
   const [helpfulness, setHelpfulness] = useState<number | null>(null);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [ratingSubmitError, setRatingSubmitError] = useState<string | null>(null);
+  // 상단 GNB "TripFit" 로고 → 처음부터 다시 시작. 아무 것도 입력/진행
+  // 하지 않은 순수 초기 상태면 바로 초기화하고, 뭔가 입력했거나 결과·
+  // 결정 단계까지 진행했다면(둘 다 planA/B 상태가 채워져 있어야만
+  // 도달 가능하므로 이 조건 하나로 전부 커버된다) 확인 dialog를 먼저
+  // 보여준다.
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // 비교 세션(계측 퍼널) 타이밍/중복 방지 상태 — 화면 렌더링과 무관해
   // state가 아니라 ref로 둔다.
@@ -82,26 +99,43 @@ export default function Home() {
     return text.length >= MIN_LEN && text.length <= MAX_LEN;
   }
 
-  function handleChangeA(v: string) {
-    setPlanAText(v);
+  function handleChangePlanADuration(days: number) {
+    setPlanADuration(days);
+    setPlanADayTexts((prev) => resizeDayTexts(prev, days));
     setInputMode("own_plan");
-    if (!planAReadyFiredRef.current && isPlanReady(v)) {
+  }
+  function handleChangePlanBDuration(days: number) {
+    setPlanBDuration(days);
+    setPlanBDayTexts((prev) => resizeDayTexts(prev, days));
+    setInputMode("own_plan");
+  }
+
+  function handleChangePlanADayText(index: number, value: string) {
+    const next = [...planADayTexts];
+    next[index] = value;
+    setPlanADayTexts(next);
+    setInputMode("own_plan");
+    if (!planAReadyFiredRef.current && isPlanReady(joinDayTexts(next))) {
       planAReadyFiredRef.current = true;
       trackPlanReady("a", "own_plan");
     }
   }
-  function handleChangeB(v: string) {
-    setPlanBText(v);
+  function handleChangePlanBDayText(index: number, value: string) {
+    const next = [...planBDayTexts];
+    next[index] = value;
+    setPlanBDayTexts(next);
     setInputMode("own_plan");
-    if (!planBReadyFiredRef.current && isPlanReady(v)) {
+    if (!planBReadyFiredRef.current && isPlanReady(joinDayTexts(next))) {
       planBReadyFiredRef.current = true;
       trackPlanReady("b", "own_plan");
     }
   }
 
   function handleLoadSample() {
-    setPlanAText(SAMPLE_PLAN_A_TEXT);
-    setPlanBText(SAMPLE_PLAN_B_TEXT);
+    setPlanADuration(SAMPLE_PLAN_A_DAY_TEXTS.length);
+    setPlanADayTexts([...SAMPLE_PLAN_A_DAY_TEXTS]);
+    setPlanBDuration(SAMPLE_PLAN_B_DAY_TEXTS.length);
+    setPlanBDayTexts([...SAMPLE_PLAN_B_DAY_TEXTS]);
     setInputMode("sample");
     trackSampleLoaded(1);
     if (!planAReadyFiredRef.current) {
@@ -115,7 +149,7 @@ export default function Home() {
   }
 
   function handleSubmitInput() {
-    trackComparisonRequested(inputMode ?? "own_plan");
+    trackComparisonRequested(inputMode ?? "own_plan", planADuration, planBDuration);
     processingStartedAtRef.current = Date.now();
     setStructuringFailure(null);
     setStep("processing");
@@ -215,8 +249,10 @@ export default function Home() {
 
   function handleRestart() {
     setStep("input");
-    setPlanAText("");
-    setPlanBText("");
+    setPlanADuration(null);
+    setPlanADayTexts([]);
+    setPlanBDuration(null);
+    setPlanBDayTexts([]);
     setInputMode(null);
     setComparisonResult(null);
     setStructuringFailure(null);
@@ -230,24 +266,53 @@ export default function Home() {
     startComparisonSession();
   }
 
+  function hasInProgressData() {
+    return (
+      planADuration !== null ||
+      planBDuration !== null ||
+      planADayTexts.some((t) => t.trim().length > 0) ||
+      planBDayTexts.some((t) => t.trim().length > 0)
+    );
+  }
+
+  function handleLogoClick() {
+    if (hasInProgressData()) {
+      setShowResetConfirm(true);
+    } else {
+      handleRestart();
+    }
+  }
+
+  function handleConfirmReset() {
+    setShowResetConfirm(false);
+    handleRestart();
+  }
+
   return (
     <div className="min-h-dvh w-full bg-background">
       <div className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-surface">
         {step === "input" && (
           <StepInput
-            planAText={planAText}
-            planBText={planBText}
-            onChangeA={handleChangeA}
-            onChangeB={handleChangeB}
+            planADuration={planADuration}
+            planADayTexts={planADayTexts}
+            onChangePlanADuration={handleChangePlanADuration}
+            onChangePlanADayText={handleChangePlanADayText}
+            planBDuration={planBDuration}
+            planBDayTexts={planBDayTexts}
+            onChangePlanBDuration={handleChangePlanBDuration}
+            onChangePlanBDayText={handleChangePlanBDayText}
             onLoadSample={handleLoadSample}
             onSubmit={handleSubmitInput}
             onFeedbackClick={() => setStep("feedback")}
+            onLogoClick={handleLogoClick}
             autoFocusPlan={focusPlan}
             onAutoFocusConsumed={() => setFocusPlan(null)}
           />
         )}
 
-        {step === "feedback" && <StepFeedback onBack={() => setStep("input")} />}
+        {step === "feedback" && (
+          <StepFeedback onBack={() => setStep("input")} onLogoClick={handleLogoClick} />
+        )}
 
         {step === "processing" && (
           <StepProcessing
@@ -270,11 +335,16 @@ export default function Home() {
             onBack={() => setStep("input")}
             onNext={() => setStep("decision")}
             onReopenOriginal={handleReopenOriginal}
+            onLogoClick={handleLogoClick}
           />
         )}
 
         {step === "decision" && (
-          <StepDecision onSelect={handleDecisionSelect} onBack={() => setStep("result")} />
+          <StepDecision
+            onSelect={handleDecisionSelect}
+            onBack={() => setStep("result")}
+            onLogoClick={handleLogoClick}
+          />
         )}
 
         {step === "reason" && decision && (
@@ -286,6 +356,7 @@ export default function Home() {
             onChangeReasonText={setReasonText}
             onBack={() => setStep("decision")}
             onNext={handleReasonNext}
+            onLogoClick={handleLogoClick}
           />
         )}
 
@@ -297,6 +368,7 @@ export default function Home() {
             onSubmit={handleRatingSubmit}
             isSubmitting={isSubmittingRating}
             submitError={ratingSubmitError}
+            onLogoClick={handleLogoClick}
           />
         )}
 
@@ -311,6 +383,10 @@ export default function Home() {
           />
         )}
       </div>
+
+      {showResetConfirm && (
+        <ResetConfirmDialog onCancel={() => setShowResetConfirm(false)} onConfirm={handleConfirmReset} />
+      )}
     </div>
   );
 }

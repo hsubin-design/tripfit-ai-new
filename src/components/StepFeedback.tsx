@@ -7,6 +7,7 @@ import { insertServiceFeedback } from "@/lib/supabase";
 
 type Props = {
   onBack: () => void;
+  onLogoClick?: () => void;
 };
 
 // "의견 보내기" 진입점이 현재 첫 화면(입력 화면) AppHeader 하나뿐이라
@@ -19,7 +20,7 @@ const SOURCE_SCREEN = "input";
  *  — 실패하면 입력한 텍스트를 그대로 두고 재시도할 수 있게 한다.
  *  feedback_text 원문은 Supabase에만 저장되고 Mixpanel에는 절대
  *  실리지 않는다(trackFeedbackSubmitted는 글자 수만 받는다). */
-export default function StepFeedback({ onBack }: Props) {
+export default function StepFeedback({ onBack, onLogoClick }: Props) {
   const [feedbackText, setFeedbackText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export default function StepFeedback({ onBack }: Props) {
   if (isSubmitted) {
     return (
       <div className="w-full">
-        <AppHeader variant="back" onBack={onBack} />
+        <AppHeader variant="back" onBack={onBack} onLogoClick={onLogoClick} />
         <div className="flex w-full flex-col px-5 pb-28 pt-20">
           <h1 className="heading-page">의견을 보내주셔서 감사합니다.</h1>
         </div>

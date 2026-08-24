@@ -51,8 +51,19 @@ export function trackPlanReady(plan: "a" | "b", inputMode: InputMode) {
   track(plan === "a" ? "plan_a_ready" : "plan_b_ready", { input_mode: inputMode });
 }
 
-export function trackComparisonRequested(inputMode: InputMode) {
-  track("comparison_requested", { input_mode: inputMode });
+// 일차별 입력 구조 실험(2026-08-24) — 여행 기간은 사용자가 이미 선택한
+// 값(숫자, PII/원문 아님)이라 comparison_requested에 속성만 추가한다.
+// 새 이벤트를 만들지 않고 기존 funnel 이벤트 이름/순서는 그대로 둔다.
+export function trackComparisonRequested(
+  inputMode: InputMode,
+  planADurationDays?: number | null,
+  planBDurationDays?: number | null
+) {
+  track("comparison_requested", {
+    input_mode: inputMode,
+    ...(planADurationDays != null ? { plan_a_duration_days: planADurationDays } : {}),
+    ...(planBDurationDays != null ? { plan_b_duration_days: planBDurationDays } : {}),
+  });
 }
 
 export function trackComparisonViewed(processingTimeMs: number) {
