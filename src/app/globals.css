@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * TripFit AI — Design tokens (docs/DESIGN.md, Soft Indigo → Primary Purple #7A2EFF)
+ * TripFit AI — Design tokens (docs/DESIGN.md, Soft Indigo → Primary Purple #6A43E8)
  * Central source of truth for color / radius / typography. Components should
  * consume these via Tailwind utilities (bg-primary, rounded-card, ...) or the
  * component classes defined below instead of hardcoding hex values.
@@ -13,22 +13,32 @@
  * accessibility. The one exception is the loading spinner, whose ring is the
  * mechanism of the UI pattern itself, not a container outline.
  *
- * Color policy: #7A2EFF is the single Primary/Active/Selected color for the
+ * Color policy: #6A43E8 is the single Primary/Active/Selected color for the
  * entire app (CTAs, selected tabs, selected chips, focus ring). No other
  * purple/violet/blue/navy shade is used for an active or selected state.
- */
+ * --color-primary-secondary(#7E72FA)는 그 규칙의 유일한 예외로, 장식적/
+ * 보조 강조 용도(핵심 요약 카드의 gradient 등)에만 쓰고 CTA·선택 상태에는
+ * 절대 쓰지 않는다(2026-08-26, "덜 AI 툴스럽고 신뢰감 있는 톤"으로 조정 —
+ * 기존 #7A2EFF보다 채도를 낮추고 어둡게 해 진정된 인상을 준다). */
 @theme {
   /* Color: interaction — the one Primary/Active/Selected purple app-wide. */
-  --color-primary: #7a2eff;
-  --color-primary-hover: #6827d9;
-  --color-primary-soft: #f2eaff;
+  --color-primary: #6a43e8;
+  --color-primary-hover: #5b35cd;
+  /* 장식적/보조 강조 전용 — CTA, 선택된 tab/button/아이콘/텍스트에는
+     쓰지 않는다(위 Color policy 참고). 현재는 .ai-card-border/.ai-card-title
+     gradient의 중간 stop에서만 쓰인다. */
+  --color-primary-secondary: #7e72fa;
+  --color-primary-soft: #eeefff;
   /* 상세 비교/날짜별 구성 metadata chip 전용 배경. 시간과 비용은 서로
      다른 종류의 정보이므로 색상 체계를 구분한다 — 시간은 Primary
      Purple 계열, 비용은 앱에 이미 쓰이던 soft blue(핵심 요약 카드의
      gradient stop #6ea8fe와 같은 계열) 톤을 옅게 가져온 것으로, 완전히
      새로운 원색을 추가한 것은 아니다. 값 자체(무료/고가 등)로 색을
-     바꾸지 않는 neutral 원칙은 그대로 유지한다. */
-  --color-time-chip-bg: #f2ebff;
+     바꾸지 않는 neutral 원칙은 그대로 유지한다. --color-primary-soft와
+     같은 밝기로 두면 두 배경이 구분되지 않아(다른 카드에서 이미 겪은
+     문제) 의도적으로 조금 더 진한 --color-primary-secondary 계열 톤을
+     쓴다. */
+  --color-time-chip-bg: #dfe1ff;
   --color-cost-chip-bg: #eaf3ff;
   --color-cost-chip-text: #2f6fed;
   /* 비교 기준 상세 / Plan A·B segmented control 전용 토큰 — 두 탭
@@ -63,6 +73,25 @@
   /* Color: status (neutral use only — never to signal a "better" plan) */
   --color-error: #c73b4a;
   --color-success: #32805f;
+
+  /* Color: 비교 결과 화면 "도움이 되었나요?" 피드백 버튼 전용 semantic
+     color — 같은 개념(부정/긍정)이라도 --color-error/--color-success와
+     값이 달라 별도 토큰으로 둔다. 이 값들은 outline-toggle의 data-variant
+     선택 상태에만 쓰고, 다른 곳(CTA/탭/focus 등)의 Primary Purple을
+     대체하지 않는다. border와 text는 항상 같은 hex 하나만 쓴다(요구사항
+     — text만 별도로 더 진한 색을 쓰지 않음). #26D07C는 흰 배경 위
+     텍스트/보더 대비가 WCAG AA 최소치보다 낮다는 점을 확인·전달했고,
+     이 값 그대로 쓰기로 확정됐다. */
+  --color-feedback-negative: #ff4d4f;
+  --color-feedback-negative-tint: #fff5f5;
+  --color-feedback-positive: #26d07c;
+  --color-feedback-positive-tint: #f0fdf6;
+  /* 선택 전(neutral) 상태 전용 — 이 버튼만 쓰는 값이라 --color-text-secondary
+     (앱 전역 톤)를 바꾸지 않고 따로 둔다. 아이콘을 텍스트보다 한 단계
+     더 연하게 둬서 텍스트가 먼저 읽히고 아이콘은 보조 요소로 보이게
+     한다. */
+  --color-feedback-neutral-text: #8f8c95;
+  --color-feedback-neutral-icon: #c4c2c8;
 
   /* Color: disabled / inactive — one unified gray system app-wide.
      Never purple/blue/navy in a disabled state. */
@@ -205,6 +234,135 @@ body {
     background: var(--color-disabled-bg);
     color: var(--color-disabled-text);
     cursor: not-allowed;
+  }
+
+  /* Outline toggle — 비교 결과 화면의 "도움이 되었나요?" 응답처럼, 다른
+     선택 버튼들(.chip/.rating-button/.tab-pill)과 달리 필채움 배경이
+     아니라 border/아이콘/텍스트 색(+ 선택 시 아주 옅은 tint 배경)으로
+     선택 상태를 표시하는 버튼. */
+  .outline-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 52px;
+    padding: 0 16px;
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-btn);
+    background: var(--color-surface);
+    color: var(--color-feedback-neutral-text);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1;
+    transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  }
+  /* 아이콘을 텍스트와 같은 flex line 위에서 vertical-align(베이스라인)에
+     기대어 맞추면 중심이 미묘하게 흔들려 보인다. 고정 20×20 박스로 한
+     번 더 감싸 두 버튼의 아이콘·텍스트 수직 중심이 항상 같은 자리에
+     오도록 강제한다. */
+  .feedback-icon-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    line-height: 1;
+    color: var(--color-feedback-neutral-icon);
+  }
+  /* helpfulness 선택 색은 브랜드 Primary Purple이 아니라 긍정/부정
+     semantic color를 쓴다 — 이 버튼 쌍(.outline-toggle[data-variant])
+     에만 적용되는 예외이고, CTA·탭·focus 등 나머지 인터랙션은 여전히
+     Primary Purple 하나로 통일한다(글로벌 Color policy 위반 아님, 이
+     한 컴포넌트만의 의도된 분리). 기존 --color-error/--color-success와도
+     다른 값이라 새 토큰으로 둔다. border/아이콘(currentColor로 상속)/
+     text는 항상 하나의 토큰(--color-feedback-negative/-positive)만
+     참조해 같은 hex로 고정된다 — hover든 selected든 색 자체는 절대
+     달라지지 않는다. border-width는 neutral/selected 모두 2px로 고정해
+     두께 변화로 content box 크기가 흔들리지 않게 하고, 선택
+     (data-selected) 상태에서는 색과 아주 옅은 tint 배경만 바뀐다 —
+     filled 버튼처럼 보이지 않도록 tint는 배경 전체를 진하게 채우지
+     않고 아주 옅은 값만 쓴다. hover는 미리보기 성격이라 색만 바꾸고
+     배경은 그대로 둔다. */
+  .outline-toggle[data-variant="negative"]:hover,
+  .outline-toggle[data-variant="negative"][data-selected="true"] {
+    border-color: var(--color-feedback-negative);
+    color: var(--color-feedback-negative);
+  }
+  .outline-toggle[data-variant="negative"][data-selected="true"] {
+    background: var(--color-feedback-negative-tint);
+  }
+  .outline-toggle[data-variant="positive"]:hover,
+  .outline-toggle[data-variant="positive"][data-selected="true"] {
+    border-color: var(--color-feedback-positive);
+    color: var(--color-feedback-positive);
+  }
+  /* neutral 상태에서만 아이콘이 텍스트보다 한 단계 연한 별도 톤
+     (--color-feedback-neutral-icon)을 쓴다 — hover/selected에서는 그
+     구분을 없애고 border/아이콘/텍스트가 다시 하나의 semantic color로
+     완전히 합쳐지도록 아이콘 박스가 부모의 색을 그대로 상속하게 한다. */
+  .outline-toggle[data-variant="negative"]:hover .feedback-icon-box,
+  .outline-toggle[data-variant="negative"][data-selected="true"] .feedback-icon-box,
+  .outline-toggle[data-variant="positive"]:hover .feedback-icon-box,
+  .outline-toggle[data-variant="positive"][data-selected="true"] .feedback-icon-box {
+    color: inherit;
+  }
+  .outline-toggle[data-variant="positive"][data-selected="true"] {
+    background: var(--color-feedback-positive-tint);
+  }
+
+  /* "비교 결과가 도움이 되었나요?" textarea 안쪽 우측 하단의 전송
+     아이콘 버튼 — 다른 primary 버튼처럼 filled 원형이다(작은 보조
+     버튼이라 outline-toggle과는 다른, .btn-primary와 같은 "채워진
+     주요 동작" 언어를 쓴다). 비활성 상태는 기존 disabled 회색 시스템을
+     그대로 재사용한다. */
+  .feedback-send-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-icon);
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .feedback-send-btn[data-ready="true"] {
+    background: var(--color-primary);
+    color: #ffffff;
+  }
+  .feedback-send-btn[data-ready="true"]:hover {
+    background: var(--color-primary-hover);
+  }
+  .feedback-send-btn:disabled {
+    cursor: not-allowed;
+  }
+
+  /* helpful/not_helpful을 처음 고른 순간에만(그 뒤 둘 사이를 바꾸는
+     것만으로는 재생되지 않음, textarea가 새로 mount될 때만) 살짝
+     떠오르듯 나타나는 짧은 등장 효과 — 과한 모션 없이 fade + 8px
+     slide만 준다. */
+  .feedback-reason-enter {
+    animation: feedback-reason-in 0.18s ease-out;
+  }
+  @keyframes feedback-reason-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .feedback-reason-enter {
+      animation: none;
+    }
   }
 
   /* Top-left back navigation — chevron-left icon only, no text, no
@@ -404,8 +562,8 @@ body {
     border-radius: var(--radius-card);
     background: linear-gradient(
       135deg,
-      rgba(123, 44, 255, 0.14) 0%,
-      rgba(111, 78, 255, 0.11) 45%,
+      rgba(106, 67, 232, 0.14) 0%,
+      rgba(126, 114, 250, 0.11) 45%,
       rgba(72, 133, 255, 0.11) 100%
     );
   }
@@ -447,7 +605,7 @@ body {
     align-items: flex-start;
     gap: 8px;
     border-radius: var(--radius-card);
-    background: #f5f0ff;
+    background: var(--color-primary-soft);
     padding: 10px 12px;
   }
   .scope-notice-title {
@@ -476,9 +634,9 @@ body {
     position: relative;
     border-radius: var(--radius-container);
     padding: 1.5px;
-    background: linear-gradient(120deg, #7a2eff, #5b5bd6, #6ea8fe, #7a2eff);
+    background: linear-gradient(120deg, #6a43e8, #7e72fa, #6ea8fe, #6a43e8);
     background-size: 200% 200%;
-    box-shadow: 0 0 20px rgba(122, 46, 255, 0.08);
+    box-shadow: 0 0 20px rgba(106, 67, 232, 0.08);
     animation: ai-card-border-shift 10s ease-in-out infinite;
   }
   .ai-card-inner {
@@ -546,7 +704,7 @@ body {
     font-size: 15px;
     font-weight: 700;
     line-height: 1.3;
-    background: linear-gradient(90deg, #7a2eff, #5b5bd6, #6ea8fe);
+    background: linear-gradient(90deg, #6a43e8, #7e72fa, #6ea8fe);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

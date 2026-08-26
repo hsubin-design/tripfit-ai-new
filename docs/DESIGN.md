@@ -33,9 +33,11 @@ Avoid:
 
 ## Color System — Test Palette A: Soft Indigo
 
-Primary: #6757C8
-Primary Hover: #5647B7
-Primary Soft: #F1EEFB
+Primary: #6A43E8
+Primary Hover / Strong: #5B35CD
+Primary Secondary (장식·보조 강조 전용, CTA/선택 상태에는 쓰지 않음): #7E72FA
+Primary Soft: #EEEFFF
+Primary Soft Alt (보조 배경, 필요 시): #DFE1FF
 
 Background: #FAFAF8
 Surface: #FFFFFF

@@ -15,9 +15,12 @@ import { requestPlanStructuring, StructuringError } from "@/lib/structurePlans";
 import { SAMPLE_PLAN_A_DAY_TEXTS, SAMPLE_PLAN_B_DAY_TEXTS } from "@/lib/sampleData";
 import { joinDayTexts, resizeDayTexts } from "@/lib/planDayText";
 import {
+  getAnalyticsDistinctId,
   initAnalytics,
   trackComparisonCompleted,
   trackComparisonFailed,
+  trackComparisonHelpfulnessSelected,
+  trackComparisonHelpfulnessSubmitted,
   trackComparisonRequested,
   trackComparisonStarted,
   trackComparisonViewed,
@@ -29,7 +32,7 @@ import {
   trackPlanReady,
   trackSampleLoaded,
 } from "@/lib/analytics";
-import { insertUtResponse } from "@/lib/supabase";
+import { insertComparisonFeedback, insertUtResponse } from "@/lib/supabase";
 import type { ComparisonCriterionId, ComparisonResult, Decision, InputMode } from "@/types/plan";
 
 type Step = "input" | "processing" | "result" | "decision" | "reason" | "rating" | "complete" | "feedback";
@@ -51,6 +54,28 @@ export default function Home() {
   const [inputMode, setInputMode] = useState<InputMode | null>(null);
 
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
+  // 비교 결과 화면 자체의 도움 여부(후행지표, 2026-08-24) — 최종
+  // 의사결정(decision/helpfulness 1~5)과는 별개 값이라 결과 화면을
+  // 벗어나도(결정→이유→평가) 유지해야 최종 Supabase row에 함께 저장할
+  // 수 있다. 그래서 StepResult 로컬 state가 아니라 여기(page)에 둔다.
+  const [comparisonHelpfulness, setComparisonHelpfulness] = useState<"helpful" | "not_helpful" | null>(
+    null
+  );
+  // comparisonHelpfulness와 같은 이유로 page 레벨에 둔다 — 결과 화면을
+  // 벗어나도 유지되어야 최종 제출에 함께 담을 수 있다. Mixpanel에는
+  // 절대 실리지 않는다(가드레일) — trackComparisonHelpfulnessSelected는
+  // 이 값을 인자로 받지 않는다.
+  const [comparisonHelpfulnessReason, setComparisonHelpfulnessReason] = useState("");
+  // 전송 아이콘으로 tripfit_comparison_feedback에 즉시 저장한 뒤에만
+  // true가 된다(CTA 활성화 조건 자체가 이 값 하나로 단순화됨). helpfulness/
+  // reason 중 하나라도 다시 바뀌면 이미 제출된 내용과 어긋나므로 즉시
+  // false로 되돌린다 — handleComparisonHelpfulnessSelect/
+  // handleChangeComparisonHelpfulnessReason에서 처리.
+  const [comparisonFeedbackSubmitted, setComparisonFeedbackSubmitted] = useState(false);
+  const [isSubmittingComparisonFeedback, setIsSubmittingComparisonFeedback] = useState(false);
+  const [comparisonFeedbackSubmitError, setComparisonFeedbackSubmitError] = useState<string | null>(
+    null
+  );
   // type/message/invalidPlans는 StructuringError를 그대로 옮겨 담은
   // 것 — invalidPlans는 not_travel_content일 때만 채워지고, StepProcessing이
   // 이 값을 보고 "플랜 A/B 수정하기" 같은 구체적 안내를 만든다.
@@ -82,6 +107,12 @@ export default function Home() {
   const processingStartedAtRef = useRef(0);
   const planAReadyFiredRef = useRef(false);
   const planBReadyFiredRef = useRef(false);
+  // 직전에 실제로 이벤트를 보낸 helpfulness 값 — state(comparisonHelpfulness)로
+  // 비교하면, 같은 값을 아주 빠르게 연속 클릭했을 때 React가 두 클릭을
+  // 한 배치로 묶어 아직 리렌더되지 않은 stale 값을 보고 중복 전송할 수
+  // 있다(state는 다음 렌더에서만 갱신되지만 ref는 그 자리에서 바로
+  // 갱신됨). ref로 비교해야 클릭 시점에 항상 최신 값을 본다.
+  const lastFiredHelpfulnessRef = useRef<"helpful" | "not_helpful" | null>(null);
 
   useEffect(() => {
     initAnalytics();
@@ -92,6 +123,7 @@ export default function Home() {
     comparisonStartedAtRef.current = Date.now();
     planAReadyFiredRef.current = false;
     planBReadyFiredRef.current = false;
+    lastFiredHelpfulnessRef.current = null;
     trackComparisonStarted();
   }
 
@@ -198,6 +230,62 @@ export default function Home() {
     trackOriginalReopened(plan);
   }
 
+  // 같은 값을 다시 눌러도(연속 클릭) 이벤트를 다시 보내지 않고, helpful
+  // ↔ not_helpful처럼 실제로 값이 바뀔 때만 다시 보낸다 — 최종 선택
+  // 상태를 그대로 분석할 수 있으면서도 중복 이벤트는 만들지 않는다.
+  function handleComparisonHelpfulnessSelect(value: "helpful" | "not_helpful") {
+    setComparisonHelpfulness(value);
+    if (comparisonFeedbackSubmitted) setComparisonFeedbackSubmitted(false);
+    if (lastFiredHelpfulnessRef.current === value) return;
+    lastFiredHelpfulnessRef.current = value;
+    trackComparisonHelpfulnessSelected(value, inputMode ?? "own_plan", planADuration, planBDuration);
+  }
+
+  // reason 텍스트를 고치면 이미 전송한 피드백과 내용이 어긋나므로,
+  // 제출 상태를 무효화해 전송 아이콘을 다시 활성화하고 CTA를 다시
+  // disabled로 되돌린다.
+  function handleChangeComparisonHelpfulnessReason(text: string) {
+    setComparisonHelpfulnessReason(text);
+    if (comparisonFeedbackSubmitted) setComparisonFeedbackSubmitted(false);
+  }
+
+  // 전송 아이콘 클릭 — Supabase(tripfit_comparison_feedback) INSERT가
+  // 성공한 뒤에만 comparisonFeedbackSubmitted를 true로 바꾸고(그래야
+  // CTA가 열린다) comparison_helpfulness_submitted를 보낸다. 실패하면
+  // 상태를 그대로 두고 에러 메시지만 보여줘 재시도할 수 있게 한다 —
+  // 일정 원문과 마찬가지로 reason 원문은 Mixpanel 인자로 넘기지 않는다.
+  async function handleSubmitComparisonFeedback() {
+    if (comparisonHelpfulness === null || comparisonHelpfulnessReason.trim().length === 0) return;
+    if (isSubmittingComparisonFeedback) return;
+
+    setIsSubmittingComparisonFeedback(true);
+    setComparisonFeedbackSubmitError(null);
+
+    const { success } = await insertComparisonFeedback({
+      testerMode: inputMode ?? "own_plan",
+      comparisonHelpfulness,
+      comparisonHelpfulnessReason,
+      planADurationDays: planADuration,
+      planBDurationDays: planBDuration,
+      sessionId: getAnalyticsDistinctId(),
+    });
+
+    setIsSubmittingComparisonFeedback(false);
+
+    if (!success) {
+      setComparisonFeedbackSubmitError("저장하지 못했어요. 다시 시도해주세요.");
+      return;
+    }
+
+    setComparisonFeedbackSubmitted(true);
+    trackComparisonHelpfulnessSubmitted(
+      comparisonHelpfulness,
+      inputMode ?? "own_plan",
+      planADuration,
+      planBDuration
+    );
+  }
+
   function handleDecisionSelect(d: Decision) {
     setDecision(d);
     trackDecisionSubmitted(d);
@@ -233,6 +321,8 @@ export default function Home() {
       selectedCriteria,
       decisionReason: reasonText,
       helpfulnessScore: helpfulness,
+      comparisonHelpfulness,
+      comparisonHelpfulnessReason,
     });
 
     setIsSubmittingRating(false);
@@ -255,6 +345,11 @@ export default function Home() {
     setPlanBDayTexts([]);
     setInputMode(null);
     setComparisonResult(null);
+    setComparisonHelpfulness(null);
+    setComparisonHelpfulnessReason("");
+    setComparisonFeedbackSubmitted(false);
+    setIsSubmittingComparisonFeedback(false);
+    setComparisonFeedbackSubmitError(null);
     setStructuringFailure(null);
     setFocusPlan(null);
     setDecision(null);
@@ -333,6 +428,14 @@ export default function Home() {
             onBack={() => setStep("input")}
             onNext={() => setStep("decision")}
             onReopenOriginal={handleReopenOriginal}
+            comparisonHelpfulness={comparisonHelpfulness}
+            onSelectComparisonHelpfulness={handleComparisonHelpfulnessSelect}
+            comparisonHelpfulnessReason={comparisonHelpfulnessReason}
+            onChangeComparisonHelpfulnessReason={handleChangeComparisonHelpfulnessReason}
+            comparisonFeedbackSubmitted={comparisonFeedbackSubmitted}
+            isSubmittingComparisonFeedback={isSubmittingComparisonFeedback}
+            comparisonFeedbackSubmitError={comparisonFeedbackSubmitError}
+            onSubmitComparisonFeedback={handleSubmitComparisonFeedback}
           />
         )}
 

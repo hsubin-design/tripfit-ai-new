@@ -34,6 +34,15 @@ function track(event: string, props?: Record<string, unknown>) {
   mixpanel.track(event, props);
 }
 
+// tripfit_comparison_feedback의 session_id로 재사용하는, Mixpanel이
+// 이미 관리하는 기기 단위 식별자 — comparison_started의 participant_id와
+// 같은 값이다(개인정보·일정 원문 아님, 새 식별자를 따로 만들지 않는다).
+// 초기화 전(토큰 미설정 등)이면 null.
+export function getAnalyticsDistinctId(): string | null {
+  if (!initialized) return null;
+  return mixpanel.get_distinct_id();
+}
+
 export function trackComparisonStarted() {
   if (!initialized) return;
   track("comparison_started", {
@@ -72,6 +81,47 @@ export function trackComparisonViewed(processingTimeMs: number) {
 
 export function trackOriginalReopened(plan: "a" | "b") {
   track("original_reopened", { plan });
+}
+
+// 비교 결과 화면 자체의 유용성(후행지표) — 최종 의사결정 완료율/유보율과는
+// 별개 지표라 helpfulness_submitted(1~5, 최종 단계)와 이름을 겹치지 않게
+// comparison_ 접두사를 붙였다. helpful/not_helpful 사이를 변경하면 그때마다
+// 다시 보내 최종 선택 상태를 알 수 있게 하고(호출부에서 동일 값 재클릭만
+// 걸러낸다), 여행 일정 원문/자유서술 텍스트는 싣지 않는다.
+export function trackComparisonHelpfulnessSelected(
+  helpfulness: "helpful" | "not_helpful",
+  testerMode: InputMode,
+  planADurationDays: number | null,
+  planBDurationDays: number | null
+) {
+  track("comparison_helpfulness_selected", {
+    helpfulness,
+    tester_mode: testerMode,
+    ...(planADurationDays != null ? { plan_a_duration_days: planADurationDays } : {}),
+    ...(planBDurationDays != null ? { plan_b_duration_days: planBDurationDays } : {}),
+    app_version: APP_VERSION,
+    source_screen: "comparison_result",
+  });
+}
+
+// comparison_helpfulness_selected(버튼 선택)와 구분되는, 전송 아이콘을
+// 눌러 Supabase(tripfit_comparison_feedback) 저장까지 성공했을 때만
+// 보내는 이벤트 — 호출부(page.tsx)가 insert 성공 콜백 안에서만 부른다.
+// comparison_helpfulness_reason 원문은 인자로도 받지 않는다.
+export function trackComparisonHelpfulnessSubmitted(
+  helpfulness: "helpful" | "not_helpful",
+  testerMode: InputMode,
+  planADurationDays: number | null,
+  planBDurationDays: number | null
+) {
+  track("comparison_helpfulness_submitted", {
+    helpfulness,
+    tester_mode: testerMode,
+    ...(planADurationDays != null ? { plan_a_duration_days: planADurationDays } : {}),
+    ...(planBDurationDays != null ? { plan_b_duration_days: planBDurationDays } : {}),
+    app_version: APP_VERSION,
+    source_screen: "comparison_result",
+  });
 }
 
 // PRD 9번(Mixpanel 이벤트 표)에 이미 정의돼 있던 `comparison_failed`

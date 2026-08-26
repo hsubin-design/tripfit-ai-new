@@ -17,6 +17,13 @@ export type UtResponseInput = {
   selectedCriteria: ComparisonCriterionId[];
   decisionReason: string;
   helpfulnessScore: number | null;
+  // 비교 결과 화면 자체의 도움 여부(후행지표) — 최종 helpfulnessScore(1~5)와는
+  // 별개 값이라 이름이 겹치지 않게 comparisonHelpfulness로 둔다. 선택하지
+  // 않았으면 null.
+  comparisonHelpfulness: "helpful" | "not_helpful" | null;
+  // comparisonHelpfulness를 고른 이유(자유서술) — Mixpanel에는 절대
+  // 보내지 않고 여기 Supabase에만 저장한다.
+  comparisonHelpfulnessReason: string;
 };
 
 /** UT 응답 하나를 tripfit_ut_responses에 저장한다. 일정 원문(Plan A/B)이나
@@ -34,6 +41,42 @@ export async function insertUtResponse(input: UtResponseInput): Promise<{ succes
     selected_criteria: input.selectedCriteria,
     decision_reason: input.decisionReason,
     helpfulness_score: input.helpfulnessScore,
+    comparison_helpfulness: input.comparisonHelpfulness,
+    comparison_helpfulness_reason: input.comparisonHelpfulnessReason,
+  });
+
+  return { success: !error };
+}
+
+export type ComparisonFeedbackInput = {
+  testerMode: InputMode;
+  comparisonHelpfulness: "helpful" | "not_helpful";
+  comparisonHelpfulnessReason: string;
+  planADurationDays: number | null;
+  planBDurationDays: number | null;
+  // Mixpanel distinct_id 재사용(개인정보 아님) — 동일 세션/기기에서 온
+  // 피드백인지 구분하기 위한 용도. 초기화 전이라 값이 없으면 null.
+  sessionId: string | null;
+};
+
+/** 비교 결과 화면의 전송 아이콘으로 즉시 저장하는 도움 여부 피드백.
+ *  사용자가 결정 단계까지 가지 않아도 남을 수 있도록 tripfit_ut_responses와
+ *  별도로 tripfit_comparison_feedback에 저장한다 — 최종 제출 시
+ *  insertUtResponse에도 같은 값이 한 번 더 저장되는 것과는 독립적인
+ *  기록이다. 일정 원문/개인정보를 받는 필드는 없다. */
+export async function insertComparisonFeedback(
+  input: ComparisonFeedbackInput
+): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  const { error } = await supabase.from("tripfit_comparison_feedback").insert({
+    app_version: APP_VERSION,
+    tester_mode: input.testerMode,
+    comparison_helpfulness: input.comparisonHelpfulness,
+    comparison_helpfulness_reason: input.comparisonHelpfulnessReason,
+    plan_a_duration_days: input.planADurationDays,
+    plan_b_duration_days: input.planBDurationDays,
+    session_id: input.sessionId,
   });
 
   return { success: !error };

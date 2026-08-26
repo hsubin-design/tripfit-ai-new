@@ -18,6 +18,14 @@ type Props = {
   onBack: () => void;
   onNext: () => void;
   onReopenOriginal: (plan: "a" | "b") => void;
+  comparisonHelpfulness: "helpful" | "not_helpful" | null;
+  onSelectComparisonHelpfulness: (value: "helpful" | "not_helpful") => void;
+  comparisonHelpfulnessReason: string;
+  onChangeComparisonHelpfulnessReason: (text: string) => void;
+  comparisonFeedbackSubmitted: boolean;
+  isSubmittingComparisonFeedback: boolean;
+  comparisonFeedbackSubmitError: string | null;
+  onSubmitComparisonFeedback: () => void;
 };
 
 function sumItems(counts: number[]) {
@@ -31,7 +39,22 @@ export default function StepResult({
   onBack,
   onNext,
   onReopenOriginal,
+  comparisonHelpfulness,
+  onSelectComparisonHelpfulness,
+  comparisonHelpfulnessReason,
+  onChangeComparisonHelpfulnessReason,
+  comparisonFeedbackSubmitted,
+  isSubmittingComparisonFeedback,
+  comparisonFeedbackSubmitError,
+  onSubmitComparisonFeedback,
 }: Props) {
+  // 결과 콘텐츠 하단 "도움이 되었나요?" 선택 + 이유 작성 + 전송(Supabase
+  // 저장 성공)까지 모두 마쳐야만 다음 단계로 넘어갈 수 있다(요구사항
+  // 변경: 선택+작성 → 전송 성공까지 필수). comparisonFeedbackSubmitted
+  // 자체가 "제출 시점에 선택·작성이 유효했고 그 뒤로 바뀌지 않았다"를
+  // 보장하므로(page.tsx가 값이 바뀌면 즉시 false로 되돌림) 이 값 하나만
+  // 보면 된다.
+  const canProceed = comparisonFeedbackSubmitted;
   const [openOriginal, setOpenOriginal] = useState<{ a: boolean; b: boolean }>({ a: false, b: false });
   const [topTab, setTopTab] = useState<"summary" | "detail">("summary");
   const [planTab, setPlanTab] = useState<"a" | "b">("a");
@@ -166,13 +189,29 @@ export default function StepResult({
             />
           </section>
         )}
+
+        <ComparisonHelpfulness
+          value={comparisonHelpfulness}
+          onSelect={onSelectComparisonHelpfulness}
+          reasonText={comparisonHelpfulnessReason}
+          onChangeReasonText={onChangeComparisonHelpfulnessReason}
+          submitted={comparisonFeedbackSubmitted}
+          isSubmitting={isSubmittingComparisonFeedback}
+          submitError={comparisonFeedbackSubmitError}
+          onSubmit={onSubmitComparisonFeedback}
+        />
       </div>
 
       {/* Fixed strip spans the viewport; the inner div clamps back to the app
           shell's max width so the CTA never grows wider than the app itself. */}
       <div className="fixed inset-x-0 bottom-0 z-10">
         <div className="bottom-cta-bar mx-auto w-full max-w-[430px]">
-          <button type="button" onClick={onNext} className="btn-primary focus-ring w-full">
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={!canProceed}
+            className="btn-primary focus-ring w-full"
+          >
             결정하러 가기
           </button>
         </div>
@@ -209,6 +248,178 @@ function ComparisonScopeNotice() {
         </p>
       </div>
     </div>
+  );
+}
+
+/** 결과 콘텐츠 맨 아래, [결정하러 가기] CTA 바로 위에 오는 후행지표
+ *  피드백 — 최종 의사결정(완료율/유보율)과 별개로 "비교 결과 화면
+ *  자체"가 도움이 됐는지 + 그 이유를 묻고, textarea 안의 전송 아이콘으로
+ *  즉시 저장한다(성공해야만 CTA가 열린다). 핵심 요약/상세 비교 어느
+ *  탭이든 같은 자리에 항상 보이도록 topTab 분기 밖에서 한 번만
+ *  렌더링한다. textarea는 helpful/not_helpful 중 하나를 고르기 전에는
+ *  아예 렌더링하지 않는다 — null → 값이 생기는 순간에만 mount되므로
+ *  그때 한 번 짧은 fade+slide로 나타나고(.feedback-reason-enter),
+ *  이미 선택된 값을 helpful↔not_helpful로 바꾸는 것만으로는(value가
+ *  계속 non-null) 다시 mount되지 않아 placeholder만 바뀌고 애니메이션은
+ *  반복되지 않는다. */
+function ComparisonHelpfulness({
+  value,
+  onSelect,
+  reasonText,
+  onChangeReasonText,
+  submitted,
+  isSubmitting,
+  submitError,
+  onSubmit,
+}: {
+  value: "helpful" | "not_helpful" | null;
+  onSelect: (value: "helpful" | "not_helpful") => void;
+  reasonText: string;
+  onChangeReasonText: (text: string) => void;
+  submitted: boolean;
+  isSubmitting: boolean;
+  submitError: string | null;
+  onSubmit: () => void;
+}) {
+  const placeholder =
+    value === "not_helpful" ? "어떤 점이 아쉬웠는지 알려주세요." : "어떤 점이 도움이 됐는지 알려주세요.";
+  // 전송 아이콘은 선택 + 실제 이유(공백 제외)가 있어야만 누를 수 있고,
+  // 이미 전송에 성공한 뒤(내용 변경 전)에는 다시 누를 필요가 없어
+  // disabled로 둔다 — helpfulness/reason이 바뀌면 부모가 submitted를
+  // false로 되돌려 자동으로 다시 활성화된다("재전송").
+  const canSubmit = value !== null && reasonText.trim().length > 0;
+  const sendDisabled = !canSubmit || isSubmitting || submitted;
+
+  return (
+    <section className="mt-8">
+      <p className="text-[15px] font-semibold text-text-primary">비교 결과가 도움이 되었나요?</p>
+      <div className="mt-3 flex gap-3">
+        <button
+          type="button"
+          onClick={() => onSelect("not_helpful")}
+          data-selected={value === "not_helpful"}
+          data-variant="negative"
+          className="outline-toggle focus-ring flex-1"
+        >
+          <span className="feedback-icon-box">
+            <ThumbsDownIcon />
+          </span>
+          아쉬워요
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelect("helpful")}
+          data-selected={value === "helpful"}
+          data-variant="positive"
+          className="outline-toggle focus-ring flex-1"
+        >
+          <span className="feedback-icon-box">
+            <ThumbsUpIcon />
+          </span>
+          도움이 됐어요
+        </button>
+      </div>
+      {value !== null && (
+        <div className="feedback-reason-enter relative mt-3">
+          <textarea
+            value={reasonText}
+            onChange={(e) => onChangeReasonText(e.target.value)}
+            rows={3}
+            placeholder={placeholder}
+            className="field text-body resize-none p-3 pr-12 pb-12"
+          />
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={sendDisabled}
+            data-ready={canSubmit}
+            aria-label={submitted ? "피드백이 저장됐어요" : "피드백 전송"}
+            className="feedback-send-btn focus-ring"
+          >
+            {isSubmitting ? <SpinnerIcon /> : submitted ? <SendSuccessIcon /> : <SendIcon />}
+          </button>
+        </div>
+      )}
+      {submitError !== null && <p className="text-error mt-2 text-[13px] leading-[1.4]">{submitError}</p>}
+    </section>
+  );
+}
+
+/** outline-toggle 버튼 왼쪽의 filled 아이콘(Material Symbols "thumb_down"/
+ *  "thumb_up" solid glyph, Apache-2.0) — 선택 전/후 모두 항상 filled로
+ *  그린다. 상태에 따른 색은 버튼의 텍스트 색(gray↔semantic color)을
+ *  fill="currentColor"로 그대로 물려받을 뿐, 아이콘 자체의 렌더링
+ *  방식(fill 여부)은 바뀌지 않는다. */
+function ThumbsDownIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z" />
+    </svg>
+  );
+}
+
+function ThumbsUpIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
+    </svg>
+  );
+}
+
+/** textarea 안 전송 버튼의 기본(미전송) 아이콘. */
+function SendIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </svg>
+  );
+}
+
+/** 전송 중 상태 — Tailwind 기본 animate-spin 유틸을 그대로 쓴다(새
+ *  keyframes를 추가하지 않음). */
+function SpinnerIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className="animate-spin"
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.3" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 전송 성공 후 표시하는 완료 체크. */
+function SendSuccessIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
   );
 }
 
@@ -375,8 +586,8 @@ function SparkleIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
       <defs>
         <linearGradient id={gradientId} x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#7a2eff" />
-          <stop offset="55%" stopColor="#5b5bd6" />
+          <stop offset="0%" stopColor="#6a43e8" />
+          <stop offset="55%" stopColor="#7e72fa" />
           <stop offset="100%" stopColor="#6ea8fe" />
         </linearGradient>
       </defs>
