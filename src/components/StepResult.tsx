@@ -48,13 +48,6 @@ export default function StepResult({
   comparisonFeedbackSubmitError,
   onSubmitComparisonFeedback,
 }: Props) {
-  // 결과 콘텐츠 하단 "도움이 되었나요?" 선택 + 이유 작성 + 전송(Supabase
-  // 저장 성공)까지 모두 마쳐야만 다음 단계로 넘어갈 수 있다(요구사항
-  // 변경: 선택+작성 → 전송 성공까지 필수). comparisonFeedbackSubmitted
-  // 자체가 "제출 시점에 선택·작성이 유효했고 그 뒤로 바뀌지 않았다"를
-  // 보장하므로(page.tsx가 값이 바뀌면 즉시 false로 되돌림) 이 값 하나만
-  // 보면 된다.
-  const canProceed = comparisonFeedbackSubmitted;
   const [openOriginal, setOpenOriginal] = useState<{ a: boolean; b: boolean }>({ a: false, b: false });
   const [topTab, setTopTab] = useState<"summary" | "detail">("summary");
   const [planTab, setPlanTab] = useState<"a" | "b">("a");
@@ -206,12 +199,10 @@ export default function StepResult({
           shell's max width so the CTA never grows wider than the app itself. */}
       <div className="fixed inset-x-0 bottom-0 z-10">
         <div className="bottom-cta-bar mx-auto w-full max-w-[430px]">
-          <button
-            type="button"
-            onClick={onNext}
-            disabled={!canProceed}
-            className="btn-primary focus-ring w-full"
-          >
+          {/* 비교 결과 만족도 피드백(선택/이유/전송)은 모두 optional이다
+              — 핵심 퍼널(비교→결정)을 막지 않도록 피드백 제출 여부와
+              무관하게 항상 활성화한다. */}
+          <button type="button" onClick={onNext} className="btn-primary focus-ring w-full">
             결정하러 가기
           </button>
         </div>
@@ -254,9 +245,11 @@ function ComparisonScopeNotice() {
 /** 결과 콘텐츠 맨 아래, [결정하러 가기] CTA 바로 위에 오는 후행지표
  *  피드백 — 최종 의사결정(완료율/유보율)과 별개로 "비교 결과 화면
  *  자체"가 도움이 됐는지 + 그 이유를 묻고, textarea 안의 전송 아이콘으로
- *  즉시 저장한다(성공해야만 CTA가 열린다). 핵심 요약/상세 비교 어느
- *  탭이든 같은 자리에 항상 보이도록 topTab 분기 밖에서 한 번만
- *  렌더링한다. textarea는 helpful/not_helpful 중 하나를 고르기 전에는
+ *  즉시 저장한다. 선택/작성/전송 모두 optional이며 CTA를 막지 않는다
+ *  — 핵심 퍼널(비교→결정)을 후행지표 피드백이 가로막지 않도록 하기
+ *  위함이다. 핵심 요약/상세 비교 어느 탭이든 같은 자리에 항상 보이도록
+ *  topTab 분기 밖에서 한 번만 렌더링한다. textarea는 helpful/not_helpful
+ *  중 하나를 고르기 전에는
  *  아예 렌더링하지 않는다 — null → 값이 생기는 순간에만 mount되므로
  *  그때 한 번 짧은 fade+slide로 나타나고(.feedback-reason-enter),
  *  이미 선택된 값을 helpful↔not_helpful로 바꾸는 것만으로는(value가
@@ -281,12 +274,20 @@ function ComparisonHelpfulness({
   submitError: string | null;
   onSubmit: () => void;
 }) {
+  // 텍스트 작성 자체가 optional임을 placeholder에서 바로 알 수 있도록
+  // "(선택)"을 명시한다 — 선택(helpful/not_helpful)과 별개로 텍스트를
+  // 안 써도 되고, 안 써도 아무것도 막히지 않는다(전송 아이콘만
+  // 비활성으로 남는다).
   const placeholder =
-    value === "not_helpful" ? "어떤 점이 아쉬웠는지 알려주세요." : "어떤 점이 도움이 됐는지 알려주세요.";
+    value === "not_helpful"
+      ? "어떤 점이 아쉬웠는지 알려주세요. (선택)"
+      : "어떤 점이 도움이 되었는지 알려주세요. (선택)";
   // 전송 아이콘은 선택 + 실제 이유(공백 제외)가 있어야만 누를 수 있고,
   // 이미 전송에 성공한 뒤(내용 변경 전)에는 다시 누를 필요가 없어
   // disabled로 둔다 — helpfulness/reason이 바뀌면 부모가 submitted를
-  // false로 되돌려 자동으로 다시 활성화된다("재전송").
+  // false로 되돌려 자동으로 다시 활성화된다("재전송"). 텍스트를 아예
+  // 쓰지 않아도(reasonText === "") 전송 아이콘만 비활성 상태로 남을
+  // 뿐, 선택 자체나 CTA(결정하러 가기)에는 아무 영향이 없다.
   const canSubmit = value !== null && reasonText.trim().length > 0;
   const sendDisabled = !canSubmit || isSubmitting || submitted;
 

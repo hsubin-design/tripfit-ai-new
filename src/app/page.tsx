@@ -67,10 +67,12 @@ export default function Home() {
   // 이 값을 인자로 받지 않는다.
   const [comparisonHelpfulnessReason, setComparisonHelpfulnessReason] = useState("");
   // 전송 아이콘으로 tripfit_comparison_feedback에 즉시 저장한 뒤에만
-  // true가 된다(CTA 활성화 조건 자체가 이 값 하나로 단순화됨). helpfulness/
-  // reason 중 하나라도 다시 바뀌면 이미 제출된 내용과 어긋나므로 즉시
-  // false로 되돌린다 — handleComparisonHelpfulnessSelect/
-  // handleChangeComparisonHelpfulnessReason에서 처리.
+  // true가 된다 — CTA(결정하러 가기)는 이 값과 무관하게 항상 활성화되고,
+  // 이 값은 오직 전송 아이콘 자체의 재전송 가능 여부(sendDisabled)에만
+  // 쓰인다. helpfulness/reason 중 하나라도 다시 바뀌면 이미 제출된
+  // 내용과 어긋나므로 즉시 false로 되돌린다 —
+  // handleComparisonHelpfulnessSelect/handleChangeComparisonHelpfulnessReason에서
+  // 처리.
   const [comparisonFeedbackSubmitted, setComparisonFeedbackSubmitted] = useState(false);
   const [isSubmittingComparisonFeedback, setIsSubmittingComparisonFeedback] = useState(false);
   const [comparisonFeedbackSubmitError, setComparisonFeedbackSubmitError] = useState<string | null>(
@@ -242,18 +244,20 @@ export default function Home() {
   }
 
   // reason 텍스트를 고치면 이미 전송한 피드백과 내용이 어긋나므로,
-  // 제출 상태를 무효화해 전송 아이콘을 다시 활성화하고 CTA를 다시
-  // disabled로 되돌린다.
+  // 제출 상태를 무효화해 전송 아이콘을 다시 활성화한다(CTA는 이 상태와
+  // 무관하게 항상 활성화 상태다).
   function handleChangeComparisonHelpfulnessReason(text: string) {
     setComparisonHelpfulnessReason(text);
     if (comparisonFeedbackSubmitted) setComparisonFeedbackSubmitted(false);
   }
 
   // 전송 아이콘 클릭 — Supabase(tripfit_comparison_feedback) INSERT가
-  // 성공한 뒤에만 comparisonFeedbackSubmitted를 true로 바꾸고(그래야
-  // CTA가 열린다) comparison_helpfulness_submitted를 보낸다. 실패하면
-  // 상태를 그대로 두고 에러 메시지만 보여줘 재시도할 수 있게 한다 —
-  // 일정 원문과 마찬가지로 reason 원문은 Mixpanel 인자로 넘기지 않는다.
+  // 성공한 뒤에만 comparisonFeedbackSubmitted를 true로 바꾸고
+  // comparison_helpfulness_submitted를 보낸다. 실패하면 상태를 그대로
+  // 두고 에러 메시지만 보여줘 재시도할 수 있게 한다 — 일정 원문과
+  // 마찬가지로 reason 원문은 Mixpanel 인자로 넘기지 않는다. 이 피드백은
+  // 전체가 optional이라 CTA(결정하러 가기)는 이 함수 호출 여부와 무관하게
+  // 항상 활성화되어 있다.
   async function handleSubmitComparisonFeedback() {
     if (comparisonHelpfulness === null || comparisonHelpfulnessReason.trim().length === 0) return;
     if (isSubmittingComparisonFeedback) return;
