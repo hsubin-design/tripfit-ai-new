@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import AppHeader from "@/components/AppHeader";
 import { allDaysFilled } from "@/lib/planDayText";
+import { isDevRouteMockEnabled } from "@/lib/devRouteMock";
 
 const TOAST_DURATION_MS = 2500;
 
@@ -21,6 +22,18 @@ const DURATION_OPTIONS: { label: string; days: number }[] = [
 // 섞여 있는 경우(예: "해운대 방문 후 https://... 참고")는 이 패턴에
 // 걸리지 않는다 — 문자열 전체가 처음부터 끝까지 URL 하나여야만 막는다.
 const URL_ONLY_PATTERN = /^(?:https?:\/\/|www\.)\S+$/i;
+
+// v1.0 — Input Exploration 진입 링크를 코치 공유용 Vercel Preview
+// 배포에서도 보이게 하기 위한 게이트. isDevRouteMockEnabled()(dev mock
+// 이동정보 데이터 전용 — production에 절대 노출되면 안 되는 가드레일)는
+// 그대로 두고 전혀 건드리지 않는다 — 이건 완전히 별개의, 추가 조건일
+// 뿐이다. NEXT_PUBLIC_ENABLE_EXPLORATION은 이 preview 배포를 만들 때만
+// `vercel deploy --build-env`로 그 배포 하나에만 넘기는 값이라, main
+// 브랜치의 production 배포에는 이 값 자체가 존재하지 않는다(항상
+// undefined → false).
+function isExplorationPreviewEnabled(): boolean {
+  return isDevRouteMockEnabled() || process.env.NEXT_PUBLIC_ENABLE_EXPLORATION === "1";
+}
 
 type ToastContent = { title: string; subtitle?: string };
 
@@ -75,6 +88,10 @@ type Props = {
   // 한다.
   autoFocusPlan?: "a" | "b" | null;
   onAutoFocusConsumed?: () => void;
+  /** v1.0 dev — 새 입력 방식(붙여넣기/직접 일정 추가) Exploration
+   *  화면(StepInputExplorationDev) 진입점. 이 화면 자체는 그대로 보존하고
+   *  건드리지 않는다. */
+  onOpenInputExploration?: () => void;
 };
 
 export default function StepInput({
@@ -92,6 +109,7 @@ export default function StepInput({
   onLogoClick,
   autoFocusPlan,
   onAutoFocusConsumed,
+  onOpenInputExploration,
 }: Props) {
   const [touchedA, setTouchedA] = useState(false);
   const [touchedB, setTouchedB] = useState(false);
@@ -154,8 +172,21 @@ export default function StepInput({
 
         <div className="mt-7">
           <h1 className="heading-page">두 일정, 뭐가 다른지 비교해봐요.</h1>
-          <p className="text-body-secondary mt-2">여행 기간을 고르고, 일차별로 자유롭게 적어주세요.</p>
+          <p className="text-body-secondary mt-2">여행 기간을 고르고, 알고 있는 만큼 자유롭게 적어주세요.</p>
+          <p className="text-caption text-text-muted mt-1 text-[13px] leading-[1.5]">
+            형식은 신경 쓰지 않아도 괜찮아요. 블로그·메모·AI 일정도 그대로 붙여넣을 수 있어요.
+          </p>
         </div>
+
+        {/* v1.0 — 사용자가 "무엇을 어떻게 적는지" 먼저 이해한 뒤 예시 사용
+            여부를 선택하도록 Guide Card를 예시 CTA보다 먼저 보여준다. */}
+        <GuideCard />
+
+        {/* Primary CTA(하단 "두 일정 비교하기")와 경쟁하지 않도록
+            .btn-secondary(무채색) 톤을 그대로 쓴다. */}
+        <button type="button" onClick={onLoadSample} className="btn-secondary focus-ring mt-4 w-full">
+          예시 일정으로 시작하기
+        </button>
 
         <div className="mt-6 flex flex-col gap-6">
           <PlanSection
@@ -182,13 +213,18 @@ export default function StepInput({
           />
         </div>
 
-        <button
-          type="button"
-          onClick={onLoadSample}
-          className="focus-ring mt-6 w-fit rounded text-sm font-medium text-text-secondary underline underline-offset-4 hover:text-primary"
-        >
-          예시 일정 불러오기
-        </button>
+        {/* v1.0 dev — Input Exploration 화면 진입점. 실제 서비스에는
+            없는 것처럼 보이도록 dev 환경 + 지정된 Preview 배포에서만
+            보여준다. */}
+        {isExplorationPreviewEnabled() && onOpenInputExploration && (
+          <button
+            type="button"
+            onClick={onOpenInputExploration}
+            className="focus-ring mt-6 self-start text-[12px] font-medium text-text-muted underline underline-offset-4"
+          >
+            🧪 새 입력 방식 실험안 보기 (dev)
+          </button>
+        )}
       </div>
 
       {/* CTA 바로 위, 같은 앱 쉘 폭(430px) 안에서 뜨는 토스트. 텍스트가
@@ -222,6 +258,29 @@ export default function StepInput({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// v1.0 — "어떻게 적으면 될까요?" 안내 카드. 실제 입력 문장 예시 하나로
+// "형식 없이 자유롭게 적어도 된다"는 것을 직접 보여준다(4개 항목을
+// row로 나열하던 이전 구조보다 컴팩트하고, TripFit의 자유 텍스트 입력
+// 방식과 더 자연스럽게 연결된다 — 두 구조를 390px에서 비교해 선택).
+// 문장 안의 시간/장소/활동/비용에 해당하는 부분만 같은 purple 톤으로
+// 강조해 category별 색상 구분 없이도 네 요소를 한눈에 짚을 수 있게 한다.
+function GuideCard() {
+  return (
+    <div className="card mt-6 bg-subtle-surface p-3">
+      <p className="text-[13px] font-semibold text-text-primary">어떻게 적으면 될까요?</p>
+      <p className="mt-2 text-[13px] leading-[1.6] text-text-primary">
+        &quot;<span className="font-semibold text-primary">오전 10시</span>{" "}
+        <span className="font-semibold text-primary">부산역</span>{" "}
+        <span className="font-semibold text-primary">도착</span> · 교통비{" "}
+        <span className="font-semibold text-primary">20,000원</span>&quot;
+      </p>
+      <p className="text-caption mt-2.5 text-[11px] leading-[1.45]">
+        시간·장소·활동·비용 중 알고 있는 내용만 적어주세요. 형식을 맞추지 않아도 괜찮아요.
+      </p>
     </div>
   );
 }
@@ -357,7 +416,11 @@ function DayTextarea({
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
         rows={3}
-        placeholder={`${dayNumber}일차 일정을 자유롭게 적어주세요.`}
+        placeholder={
+          dayNumber === 1
+            ? "예: 오전 10시 부산역 도착, 점심 해운대 식당 15,000원..."
+            : `${dayNumber}일차 일정을 자유롭게 적어주세요.`
+        }
         className="field text-body resize-none p-3"
       />
     </div>

@@ -1,4 +1,5 @@
 import type { ComparisonResult, DailyPlaceComparison, KeyDifference, PlanDay, PlanItem, PlanStructure } from "@/types/plan";
+import { isExplicitTime } from "@/lib/timeSort";
 
 // v0.7 핵심 흐름 단계용 더미 구조화 로직. 실제 LLM 연동(추후 단계) 전까지
 // 화면 흐름을 확인하기 위한 것으로, 입력 텍스트에 실제로 있는 부분 문자열만
@@ -1039,40 +1040,56 @@ export function buildComparison(planA: PlanStructure, planB: PlanStructure): Com
   const missingA = countMissing(planA);
   const missingB = countMissing(planB);
 
+  // v1.0: "핵심 차이"는 이 한 곳에서만 만든다(이전에는 이 key_differences와
+  // StepResult.tsx의 별도 scheduleSentence류 문장 생성이 따로 있었는데,
+  // 실제로 화면에 쓰이는 쪽은 StepResult뿐이라 이 필드는 죽은 코드였다).
+  // 우선 비교 축은 시간/비용/장소 구성 3가지만 쓴다 — 개수(일수/전체
+  // 항목 수) 나열은 v1.0에서 의도적으로 제외했다(단순 개수가 실제 선택에
+  // 크게 도움이 되지 않는다는 UT 인사이트). 동선(이동거리) 축은 실제
+  // 이동 API가 붙기 전까지 추가하지 않는다 — 없는 수치를 만들 수 없다.
   const keyDifferences: KeyDifference[] = [];
 
-  if (dailyCountsA.length !== dailyCountsB.length) {
-    keyDifferences.push({
-      criterion: "schedule_scale",
-      text: `A는 총 ${dailyCountsA.length}일 일정, B는 총 ${dailyCountsB.length}일 일정으로 구성되어 있음`,
-    });
-  }
-
-  // 일정 "개수"가 아니라 실제 장소·활동 구성이 다른 날만 표시한다 —
-  // 개수가 같아도 구성이 다를 수 있다는 원칙(PRD 날짜별 구성)을 여기서도
-  // 지킨다.
-  for (const dayComparison of dailyPlaceComparison) {
-    if (keyDifferences.length >= 5) break;
-    if (dayComparison.unique_to_a.length === 0 && dayComparison.unique_to_b.length === 0) continue;
-    const aText = dayComparison.unique_to_a.length > 0 ? truncateList(dayComparison.unique_to_a) : "없음";
-    const bText = dayComparison.unique_to_b.length > 0 ? truncateList(dayComparison.unique_to_b) : "없음";
-    keyDifferences.push({
-      criterion: "daily_structure",
-      text: `${dayComparison.day}일차의 장소·활동 구성이 다름 (A만: ${aText}, B만: ${bText})`,
-    });
-  }
-
-  if (uniqueToA.length > 0 && keyDifferences.length < 5) {
-    keyDifferences.push({ criterion: "place_composition", text: `A에만 있는 장소: ${truncateList(uniqueToA)}` });
-  }
-  if (uniqueToB.length > 0 && keyDifferences.length < 5) {
-    keyDifferences.push({ criterion: "place_composition", text: `B에만 있는 장소: ${truncateList(uniqueToB)}` });
-  }
-  if (missingA.cost !== missingB.cost && keyDifferences.length < 5) {
+  const explicitTimeCount = (plan: PlanStructure) =>
+    plan.days.reduce((sum, d) => sum + d.items.filter((i) => isExplicitTime(i.time)).length, 0);
+  const explicitA = explicitTimeCount(planA);
+  const explicitB = explicitTimeCount(planB);
+  if (explicitA !== explicitB) {
+    const more = explicitA > explicitB ? "A" : "B";
     keyDifferences.push({
       criterion: "information_completeness",
-      text: `비용 정보가 없는 항목이 A는 ${missingA.cost}건, B는 ${missingB.cost}건 있음`,
+      text: `플랜 ${more}는 정확한 시간이 입력된 일정이 더 많아요 (A ${explicitA}개, B ${explicitB}개).`,
     });
+  }
+
+  const costItemCount = (plan: PlanStructure) =>
+    plan.days.reduce((sum, d) => sum + d.items.filter((i) => i.stated_cost !== null).length, 0);
+  const costA = costItemCount(planA);
+  const costB = costItemCount(planB);
+  if (costA !== costB) {
+    const more = costA > costB ? "A" : "B";
+    keyDifferences.push({
+      criterion: "information_completeness",
+      text: `플랜 ${more}는 비용이 명시된 일정이 더 많아요 (A ${costA}개, B ${costB}개).`,
+    });
+  }
+
+  // 장소 구성은 실제로 차이가 있는 일차만, 최대 2개까지만 짚어준다 —
+  // "최대 3~4개"라는 전체 상한을 시간/비용 문장과 나눠 쓰기 위함.
+  for (const dayComparison of dailyPlaceComparison) {
+    if (keyDifferences.length >= 4) break;
+    if (dayComparison.unique_to_b.length > 0) {
+      keyDifferences.push({
+        criterion: "place_composition",
+        text: `${dayComparison.day}일차에는 플랜 B에만 ${truncateList(dayComparison.unique_to_b)}이 포함되어 있어요.`,
+      });
+    }
+    if (keyDifferences.length >= 4) break;
+    if (dayComparison.unique_to_a.length > 0) {
+      keyDifferences.push({
+        criterion: "place_composition",
+        text: `${dayComparison.day}일차에는 플랜 A에만 ${truncateList(dayComparison.unique_to_a)}이 포함되어 있어요.`,
+      });
+    }
   }
 
   if (keyDifferences.length === 0) {
@@ -1088,7 +1105,7 @@ export function buildComparison(planA: PlanStructure, planB: PlanStructure): Com
       daily_item_counts: { a: dailyCountsA, b: dailyCountsB },
       daily_place_comparison: dailyPlaceComparison,
       missing_information: { a: missingA, b: missingB },
-      key_differences: keyDifferences.slice(0, 5),
+      key_differences: keyDifferences.slice(0, 4),
     },
   };
 }

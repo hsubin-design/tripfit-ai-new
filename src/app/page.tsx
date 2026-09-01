@@ -9,6 +9,9 @@ import StepReason from "@/components/StepReason";
 import StepRating from "@/components/StepRating";
 import StepComplete from "@/components/StepComplete";
 import StepFeedback from "@/components/StepFeedback";
+import RouteCompareDev from "@/components/RouteCompareDev";
+import ResultSwipeVariantDev from "@/components/ResultSwipeVariantDev";
+import StepInputExplorationDev from "@/components/StepInputExplorationDev";
 import ResetConfirmDialog from "@/components/ResetConfirmDialog";
 import { buildComparison } from "@/lib/dummyComparison";
 import { requestPlanStructuring, StructuringError } from "@/lib/structurePlans";
@@ -35,7 +38,18 @@ import {
 import { insertComparisonFeedback, insertUtResponse } from "@/lib/supabase";
 import type { ComparisonCriterionId, ComparisonResult, Decision, InputMode } from "@/types/plan";
 
-type Step = "input" | "processing" | "result" | "decision" | "reason" | "rating" | "complete" | "feedback";
+type Step =
+  | "input"
+  | "processing"
+  | "result"
+  | "routeCompare"
+  | "resultSwipeExperiment"
+  | "inputExploration"
+  | "decision"
+  | "reason"
+  | "rating"
+  | "complete"
+  | "feedback";
 
 export default function Home() {
   const [step, setStep] = useState<Step>("input");
@@ -90,6 +104,10 @@ export default function Home() {
   // 화면으로 돌아가면서 문제였던 입력칸에 포커스를 옮긴다 — 한 번
   // 쓰이면 StepInput이 소비 즉시 null로 되돌린다(onAutoFocusConsumed).
   const [focusPlan, setFocusPlan] = useState<"a" | "b" | null>(null);
+  // v1.0 dev — "지도에서 N일차 동선 보기"가 어느 일차에서 눌렸는지만
+  // 기억한다. RouteCompareDev는 실제 지도 API가 붙기 전 UX 흐름 확인용
+  // 화면이라 별도 analytics/Supabase 기록은 하지 않는다.
+  const [routeCompareDay, setRouteCompareDay] = useState<number | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [selectedCriteria, setSelectedCriteria] = useState<ComparisonCriterionId[]>([]);
   const [reasonText, setReasonText] = useState("");
@@ -182,11 +200,41 @@ export default function Home() {
     }
   }
 
-  function handleSubmitInput() {
-    trackComparisonRequested(inputMode ?? "own_plan", planADuration, planBDuration);
+  // durationOverride는 Input Exploration variant 전용 — setState 직후
+  // 같은 tick에서 곧바로 제출하면 planADuration/planBDuration이 아직
+  // 갱신 전 값(stale closure)일 수 있어, 방금 넘겨준 값을 analytics
+  // 호출에 바로 쓸 수 있게 하는 우회로다. 나머지 로직(구조화 API 호출
+  // 등)은 전부 그대로다 — handleProcessingComplete는 나중에(지연 후)
+  // 실행되므로 그때는 이미 최신 state를 정상적으로 읽는다.
+  function handleSubmitInput(durationOverride?: { a: number; b: number }) {
+    trackComparisonRequested(
+      inputMode ?? "own_plan",
+      durationOverride?.a ?? planADuration,
+      durationOverride?.b ?? planBDuration
+    );
     processingStartedAtRef.current = Date.now();
     setStructuringFailure(null);
     setStep("processing");
+  }
+
+  // v1.0 dev — Input Exploration variant(StepInputExplorationDev) 전용.
+  // 그 화면은 자기 안에서 두 입력 방식(붙여넣기/직접 일정 추가)을 이미
+  // 하나의 일차별 자유 텍스트 배열로 합쳐서 넘겨준다 — 이 함수는 그
+  // 결과를 기존 planADayTexts/planBDayTexts state에 그대로 반영한 뒤
+  // 기존 handleSubmitInput을 그대로 호출할 뿐, 구조화 API 호출 방식
+  // 자체는 바꾸지 않는다.
+  function handleSubmitFromExploration(
+    aDuration: number,
+    aDayTexts: string[],
+    bDuration: number,
+    bDayTexts: string[]
+  ) {
+    setPlanADuration(aDuration);
+    setPlanADayTexts(aDayTexts);
+    setPlanBDuration(bDuration);
+    setPlanBDayTexts(bDayTexts);
+    setInputMode("own_plan");
+    handleSubmitInput({ a: aDuration, b: bDuration });
   }
 
   // 실제 구조화(LLM 호출)는 여기서 수행한다. 성공하면 기존
@@ -406,7 +454,12 @@ export default function Home() {
             onLogoClick={handleLogoClick}
             autoFocusPlan={focusPlan}
             onAutoFocusConsumed={() => setFocusPlan(null)}
+            onOpenInputExploration={() => setStep("inputExploration")}
           />
+        )}
+
+        {step === "inputExploration" && (
+          <StepInputExplorationDev onBack={() => setStep("input")} onSubmit={handleSubmitFromExploration} />
         )}
 
         {step === "feedback" && <StepFeedback onBack={() => setStep("input")} />}
@@ -440,7 +493,20 @@ export default function Home() {
             isSubmittingComparisonFeedback={isSubmittingComparisonFeedback}
             comparisonFeedbackSubmitError={comparisonFeedbackSubmitError}
             onSubmitComparisonFeedback={handleSubmitComparisonFeedback}
+            onOpenRouteCompare={(day) => {
+              setRouteCompareDay(day);
+              setStep("routeCompare");
+            }}
+            onOpenSwipeExperiment={() => setStep("resultSwipeExperiment")}
           />
+        )}
+
+        {step === "routeCompare" && routeCompareDay !== null && (
+          <RouteCompareDev day={routeCompareDay} onBack={() => setStep("result")} />
+        )}
+
+        {step === "resultSwipeExperiment" && comparisonResult && (
+          <ResultSwipeVariantDev result={comparisonResult} onBack={() => setStep("result")} />
         )}
 
         {step === "decision" && (

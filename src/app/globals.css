@@ -660,41 +660,235 @@ body {
     }
   }
 
-  /* 처리 화면 진행 표시 — 실제 진행률을 알 수 없는 더미 처리 단계라
-     0~100% 숫자나 % 게이지를 쓰지 않고, 얼마나 걸릴지 모른다는 걸
-     그대로 보여주는 indeterminate 막대만 쓴다. Primary Purple 단색
-     하나뿐이고 gradient/glow/pulse 효과는 없다 — "AI가 무언가
-     생성 중"이 아니라 "처리 중"이라는 담백한 인상만 준다. */
-  .processing-progress-track {
-    position: relative;
-    width: 100%;
-    height: 4px;
+  /* 처리 화면 진행 표시 — 실제 진행률(%)을 알 수 없으므로 숫자 게이지
+     대신 "지금 몇 단계인지"만 점으로 보여준다(완료/현재/대기 3
+     상태). 실제로는 순수 경과 시간 기준 연출일 뿐이라, 정확한 %를
+     아는 것처럼 보이는 표현은 쓰지 않는다. */
+  .processing-step-dots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .processing-step-dot {
+    width: 6px;
+    height: 6px;
     border-radius: var(--radius-pill);
     background: var(--color-disabled-bg);
+    transition: background-color 0.3s ease, width 0.3s ease;
+  }
+  .processing-step-dot[data-state="done"] {
+    background: var(--color-primary-hover);
+  }
+  .processing-step-dot[data-state="current"] {
+    width: 18px;
+    background: var(--color-primary);
+  }
+
+  /* 로딩 화면 단계별 visual 프레임 — 4단계(읽기/정리/비교/완료)마다
+     내용은 바뀌지만 이 틀(연한 Primary Purple 박스) 자체는 고정 크기라
+     레이아웃이 흔들리지 않는다("layout shift 최소화" 요구사항). */
+  .processing-visual-frame {
+    position: relative;
+    width: 100%;
+    max-width: 280px;
+    height: 136px;
+    border-radius: var(--radius-container);
+    background: var(--color-primary-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     overflow: hidden;
   }
-  .processing-progress-fill {
+  /* 단계가 바뀔 때 안의 visual이 통째로 교체되며 한 번만 살짝
+     떠오르듯 나타난다 — 반복 루프가 아니라 전환 시 1회성 효과라
+     "과한 motion"에 해당하지 않는다. */
+  .processing-stage-enter {
+    animation: processing-stage-fade-in 320ms ease-out both;
+  }
+  @keyframes processing-stage-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Stage 1 — 문서 2개를 훑어보는 느낌. scan line 하나가 두 문서 카드
+     사이를 천천히 오르내린다. */
+  .doc-pair {
+    display: flex;
+    gap: 10px;
+    position: relative;
+  }
+  .doc-card {
+    width: 36px;
+    height: 48px;
+    border-radius: 6px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 6px 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .doc-line {
+    height: 2px;
+    border-radius: 1px;
+    background: var(--color-disabled-bg);
+  }
+  .doc-line:nth-child(1) {
+    width: 100%;
+  }
+  .doc-line:nth-child(2) {
+    width: 80%;
+  }
+  .doc-line:nth-child(3) {
+    width: 60%;
+  }
+  .doc-scan-line {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 40%;
-    border-radius: var(--radius-pill);
+    left: -4px;
+    right: -4px;
+    height: 2px;
+    border-radius: 1px;
     background: var(--color-primary);
-    animation: processing-indeterminate 1.4s ease-in-out infinite;
+    opacity: 0.85;
+    animation: doc-scan-sweep 1.8s ease-in-out infinite;
   }
-  @keyframes processing-indeterminate {
-    0% {
-      left: -40%;
-    }
+  @keyframes doc-scan-sweep {
+    0%,
     100% {
-      left: 100%;
+      top: 4px;
+    }
+    50% {
+      top: 54px;
     }
   }
+
+  /* Stage 2 — 시간/장소/비용 chip이 하나씩 순서대로 나타난다(진입 시
+     1회, 무한 반복 아님). */
+  .chip-stack {
+    display: flex;
+    gap: 8px;
+  }
+  .chip-pop {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    border: 1.5px solid var(--color-primary);
+    color: var(--color-primary-hover);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    animation: chip-pop-in 380ms ease-out both;
+  }
+  .chip-pop:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .chip-pop:nth-child(2) {
+    animation-delay: 150ms;
+  }
+  .chip-pop:nth-child(3) {
+    animation-delay: 300ms;
+  }
+  @keyframes chip-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.85) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* Stage 3 — 플랜 A/B 카드 사이를 작은 점이 은은하게 오간다(느린
+     ease-in-out, 튀지 않는 속도). */
+  .ab-compare {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: relative;
+  }
+  .ab-card {
+    width: 46px;
+    height: 58px;
+    border-radius: 8px;
+    background: var(--color-surface);
+    border: 1.5px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text-secondary);
+  }
+  .ab-scan-dot {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    animation: ab-scan-move 2.2s ease-in-out infinite;
+  }
+  @keyframes ab-scan-move {
+    0%,
+    100% {
+      left: 14px;
+    }
+    50% {
+      left: calc(100% - 22px);
+    }
+  }
+
+  /* Stage 4 — 완료 체크. 등장 시 살짝 커지며 안착하는 1회성 효과만
+     쓴다. */
+  .result-check {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: result-check-settle 320ms ease-out both;
+  }
+  @keyframes result-check-settle {
+    from {
+      opacity: 0;
+      transform: scale(0.75);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .processing-progress-fill {
+    .processing-stage-enter {
       animation: none;
-      left: 0;
-      width: 100%;
+    }
+    .doc-scan-line {
+      animation: none;
+      top: 29px;
+    }
+    .chip-pop {
+      animation: none;
+    }
+    .ab-scan-dot {
+      animation: none;
+      left: calc(50% - 4px);
+    }
+    .result-check {
+      animation: none;
     }
   }
 
@@ -739,5 +933,95 @@ body {
     font-weight: 500;
     padding: 5px 9px;
     white-space: nowrap;
+  }
+
+  /* v1.0 — 결과 화면 시각 우선순위 재정비(장소명 > 비용 > 시간 > 활동/설명
+     > category > 이동정보)의 일부. 기존 .cost-chip(파란 톤, time-chip과
+     구분이 약함)은 그대로 두고 새 화면에서만 이 클래스를 쓴다 — 기존
+     .cost-chip을 쓰는 다른 화면(상세 비교 등, 아직 v1.0 레이아웃으로
+     안 옮긴 곳)에 영향을 주지 않기 위함. Time Chip보다 한 단계 강하게:
+     흰 배경 + Primary Purple 보더 + 진한 보라 SemiBold 텍스트로 border 자체가
+     "숫자"라는 신호를 주어 금액을 빠르게 scan할 수 있게 한다. */
+  .cost-chip-v1 {
+    display: inline-flex;
+    align-items: center;
+    border: 1.5px solid var(--color-primary);
+    border-radius: 9px;
+    background: var(--color-surface);
+    color: var(--color-primary-hover);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4.5px 9px;
+    white-space: nowrap;
+  }
+
+  /* v1.0 — "비용 정보 없음" 상태. Cost Chip과 혼동되지 않도록 chip
+     모양을 쓰지 않고 무채색 텍스트로만 표시한다(칩처럼 보이면 값이 있는
+     것으로 오인할 수 있음). */
+  .cost-missing-label {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-text-muted);
+  }
+
+  /* v1.0 — "시간 미기재" 상태. 기존 앱 전역의 disabled-gray 톤을 재사용해
+     "정보가 없다"는 인상을 다른 비활성 상태와 통일한다. */
+  .time-missing-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9px;
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-text);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 9px;
+    white-space: nowrap;
+  }
+
+  /* v1.0 — 장소 category badge. 카테고리별로 색을 구분하지 않는다(요구
+     사항 변경) — neutral gray 하나로 통일해 "정보 중요도가 낮은 보조
+     정보"라는 것을 색으로도 드러낸다. Time/Cost chip보다 명확히 낮은
+     시각 무게(더 작은 폰트, 더 옅은 색)를 갖는다. */
+  .category-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 6px;
+    background: var(--color-subtle-surface);
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+
+  /* v1.0 dev — Result "A/B 스와이프 비교" 실험안 전용. 기본 Result
+     화면(vertical A→B)에는 쓰이지 않는다. 스크롤바를 숨기고 한 번에
+     카드 하나만 딱 맞게 스냅되게 한다. */
+  .swipe-track {
+    display: flex;
+    width: 100%;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .swipe-track::-webkit-scrollbar {
+    display: none;
+  }
+  .swipe-card {
+    flex: 0 0 100%;
+    min-width: 100%;
+    scroll-snap-align: start;
+  }
+  .swipe-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-pill);
+    background: var(--color-disabled-bg);
+    transition: background-color 0.2s ease, width 0.2s ease;
+  }
+  .swipe-dot[data-active="true"] {
+    width: 20px;
+    background: var(--color-primary);
   }
 }
