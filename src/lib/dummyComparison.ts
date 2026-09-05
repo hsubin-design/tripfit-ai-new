@@ -1,33 +1,20 @@
 import type { ComparisonResult, DailyPlaceComparison, KeyDifference, PlanDay, PlanItem, PlanStructure } from "@/types/plan";
 import { isExplicitTime } from "@/lib/timeSort";
+import { sumPlanCost } from "@/lib/costSummary";
+import { DAY_MARKER, DATE_HEADER_PATTERN, isDayHeaderStart } from "@/lib/dayMarkerDetection";
+
+const WON_FORMATTER = new Intl.NumberFormat("ko-KR");
+function formatWon(amount: number): string {
+  return `${WON_FORMATTER.format(amount)}원`;
+}
 
 // v0.7 핵심 흐름 단계용 더미 구조화 로직. 실제 LLM 연동(추후 단계) 전까지
 // 화면 흐름을 확인하기 위한 것으로, 입력 텍스트에 실제로 있는 부분 문자열만
 // 추출하고 값이 불확실하면 null로 둔다 (사실 창작 금지 가드레일 준수).
 
-// "첫날"(첫째 날의 축약형)도 인정한다 — 빠뜨리면 "둘째 날"/"마지막
-// 날"만 일차 마커로 잡히고 "첫날"로 시작하는 문단은 안 잡혀서, 문서
-// 전체에 일차 마커가 있다고 판단하는 순간(hasAnyDayHeader) 그 앞의
-// "첫날" 문단이 "일차 마커 이전 제목"으로 오인되어 통째로 버려지는
-// 사고가 난다.
-const DAY_MARKER =
-  /^(?:(\d+)\s*일\s*차|Day\s*(\d+)|첫째\s*날|첫날|둘째\s*날|셋째\s*날|넷째\s*날|다섯째\s*날|여섯째\s*날|마지막\s*날)(?:에는|에서는|은|는|에)?/;
-
-// "1일차"류 마커 없이 날짜 자체가 하루의 시작을 나타내는 경우도 day
-// 구분자로 인정한다 — "8월 26일", "8/26", "2026.08.26", "2026-08-26"
-// 모두 지원한다. 연도가 없어도(예: "8월 26일") 원문에 실제로 적힌
-// 값이므로 그대로 인정한다 — "날짜를 만들지 않는다"는 원칙은 없는
-// 연도를 추정해서 붙이지 않는다는 뜻이지, 연도 없는 날짜 자체를
-// 거부한다는 뜻이 아니다. 헤더 줄 어디서든(예: "1일차 2026.08.26"처럼
-// 마커 뒤에 붙는 경우 포함) 찾을 수 있도록 앵커 없는 패턴을 기본으로
-// 두고, day 시작 여부 판정에는 앵커를 씌운 버전을 쓴다.
-const DATE_HEADER_PATTERN =
-  /(\d{4})\s*[.\-]\s*(\d{1,2})\s*[.\-]\s*(\d{1,2})|(\d{1,2})\s*월\s*(\d{1,2})\s*일|(\d{1,2})\s*\/\s*(\d{1,2})/;
-const DATE_HEADER_START_PATTERN = new RegExp(`^(?:${DATE_HEADER_PATTERN.source})`);
-
-function isDayHeaderStart(paragraph: string): boolean {
-  return DAY_MARKER.test(paragraph) || DATE_HEADER_START_PATTERN.test(paragraph);
-}
+// DAY_MARKER/DATE_HEADER_PATTERN/isDayHeaderStart는 이제 dayMarkerDetection.ts
+// 공용 유틸에 있다(2026-09-06, 이미지 multi-day validation과 공유하기
+// 위해 추출) — 정규식/판정 로직은 전혀 바뀌지 않았다.
 
 /** 일차 헤더 줄에서 날짜 표현을 찾아 원문 그대로("8월 26일"/"8/26"/
  *  "2026.08.26"/"2026-08-26") 반환한다 — "M월 D일"로 강제 변환하지
@@ -226,6 +213,7 @@ function parseLabeledSlashLine(line: string): PlanItem | null {
   return {
     time: isTimeLabel ? label : null,
     place,
+    category: null,
     activity: isActivityLabel ? label : null,
     stated_cost: costMatch[0],
     description,
@@ -477,6 +465,7 @@ function parseMemoChunk(rawChunk: string): PlanItem {
   return {
     time: timeValue,
     place,
+    category: null,
     activity,
     stated_cost: cost.matched,
     description,
@@ -611,6 +600,7 @@ function extractNarrativeItems(content: string): PlanItem[] {
           items.push({
             time: currentTimeMarker,
             place: null,
+            category: null,
             activity: null,
             stated_cost: costSentence.value,
             description: null,
@@ -638,6 +628,7 @@ function extractNarrativeItems(content: string): PlanItem[] {
       items.push({
         time: currentTimeMarker,
         place: placeCost.place,
+        category: null,
         activity: null,
         stated_cost: placeCost.cost,
         description: null,
@@ -678,7 +669,14 @@ function extractNarrativeItems(content: string): PlanItem[] {
         if (NARRATIVE_SKIP_WORDS.has(particleStripped)) continue;
         if (NARRATIVE_DESCRIPTIVE_OBJECT_WORDS.has(particleStripped)) continue;
         if (TRAILING_ACTIVITY_WORDS.includes(particleStripped)) {
-          items.push({ time: currentTimeMarker, place: null, activity: particleStripped, stated_cost: null, description: null });
+          items.push({
+            time: currentTimeMarker,
+            place: null,
+            category: null,
+            activity: particleStripped,
+            stated_cost: null,
+            description: null,
+          });
           lastActivitySource = "explicit";
         } else if (
           particleStripped.length >= 2 &&
@@ -687,7 +685,14 @@ function extractNarrativeItems(content: string): PlanItem[] {
           // 이/가/은/는으로 떨어진 어절은 새 place로 만들지 않는다 —
           // "보내는"→"보내"처럼 동사 활용형이 장소로 오추출되는 걸
           // 막기 위함이다(WEAK_PLACE_PARTICLES 정의 참고).
-          items.push({ time: currentTimeMarker, place: particleStripped, activity: null, stated_cost: null, description: null });
+          items.push({
+            time: currentTimeMarker,
+            place: particleStripped,
+            category: null,
+            activity: null,
+            stated_cost: null,
+            description: null,
+          });
           lastActivitySource = null;
         }
         continue;
@@ -704,7 +709,14 @@ function extractNarrativeItems(content: string): PlanItem[] {
       if (NARRATIVE_DESCRIPTIVE_OBJECT_WORDS.has(cleaned)) continue;
 
       if (TRAILING_ACTIVITY_WORDS.includes(cleaned)) {
-        items.push({ time: currentTimeMarker, place: null, activity: cleaned, stated_cost: null, description: null });
+        items.push({
+          time: currentTimeMarker,
+          place: null,
+          category: null,
+          activity: cleaned,
+          stated_cost: null,
+          description: null,
+        });
         lastActivitySource = "explicit";
         continue;
       }
@@ -732,7 +744,14 @@ function extractNarrativeItems(content: string): PlanItem[] {
         cleaned.length >= 2 &&
         !NARRATIVE_DESCRIPTIVE_OBJECT_WORDS.has(cleaned)
       ) {
-        items.push({ time: currentTimeMarker, place: cleaned, activity: null, stated_cost: null, description: null });
+        items.push({
+          time: currentTimeMarker,
+          place: cleaned,
+          category: null,
+          activity: null,
+          stated_cost: null,
+          description: null,
+        });
         lastActivitySource = null;
       }
     }
@@ -785,7 +804,7 @@ function parseDashLine(line: string): PlanItem[] {
       }
       // 직전 item이 없는 비정상 입력(맨 앞이 비용 표현)이면 비용만 담은
       // item으로라도 값을 보존한다 — 정보를 조용히 버리지 않기 위함.
-      items.push({ time: null, place: null, activity: null, stated_cost: costOnly.value, description: null });
+      items.push({ time: null, place: null, category: null, activity: null, stated_cost: costOnly.value, description: null });
       continue;
     }
     items.push(parseMemoChunk(chunk));
@@ -846,6 +865,7 @@ function parseDayBody(body: string): PlanItem[] {
     {
       time: null,
       place: null,
+      category: null,
       activity: content || null,
       stated_cost: null,
       description: null,
@@ -909,12 +929,36 @@ function tokenizeForComparison(text: string): string {
     .split(/\s+/)
     .filter(Boolean)
     .sort()
-    .join(" ");
+    .join(" ");
 }
 
 const PARENTHETICAL_ALIAS_PATTERN = /^(.*?)\(([^()]+)\)\s*$/;
 
-function canonicalPlaceKeys(rawLabel: string): string[] {
+// 버그 수정(2026-09-06, place count 중복) — 실측(실제 Excel 캡처 이미지)
+// 에서 "야마와라와우 샤브샤브로 이동"과 "아침 (야마와라와우 샤브샤브)"가
+// 같은 식당인데도 앞쪽 item의 place에 이동 조사("로")가 붙은 채로
+// 추출되어("아마와라우 사바사브로" vs "아마와라우 사바사브") 서로 다른
+// canonical key로 갈라지는 문제가 확인됐다. place 문자열 끝의 조사를
+// 무조건 떼면 "테헤란로"처럼 실제로 "로"/"길"로 끝나는 고유명사를
+// 깨뜨릴 위험이 있어(요청사항: 고유명사 훼손 검토), activity가 정확히
+// "이동"인 item에서만 — 즉 "이 항목 자체가 어딘가로 향한다"는 의미가
+// 이미 구조적으로 확정된 경우에만 — 조사를 뗀 대체 key를 "추가"한다
+// (원래 key는 그대로 남겨 원문 표기도 계속 매칭에 참여함). "그레이서리
+// 호텔 긴자"/"호텔 그레이서리"처럼 조사가 아니라 단어 순서 자체가
+// 다른 경우는 이 정규화로 잡히지 않는다 — 의도적으로 그대로 둔다
+// (요청사항: 실제 표현이 다른 장소는 임의 병합 금지).
+const TRAILING_MOVEMENT_PARTICLE_PATTERN = /(으로|에서|로|에)$/;
+
+function movementNormalizedKey(place: string, activity: string | null): string | null {
+  if (activity !== "이동") return null;
+  const match = place.match(TRAILING_MOVEMENT_PARTICLE_PATTERN);
+  if (!match) return null;
+  const stripped = place.slice(0, place.length - match[0].length).trim();
+  if (!stripped) return null;
+  return tokenizeForComparison(stripped) || null;
+}
+
+function canonicalPlaceKeys(rawLabel: string, activity: string | null = null): string[] {
   const trimmed = rawLabel.trim();
   const keys = new Set<string>();
 
@@ -928,6 +972,9 @@ function canonicalPlaceKeys(rawLabel: string): string[] {
     if (outerKey) keys.add(outerKey);
     if (innerKey) keys.add(innerKey);
   }
+
+  const movementKey = movementNormalizedKey(trimmed, activity);
+  if (movementKey) keys.add(movementKey);
 
   return Array.from(keys);
 }
@@ -950,7 +997,7 @@ function collectCanonicalPlaces(plan: PlanStructure): CanonicalLabel[] {
     for (const item of day.items) {
       if (!item.place) continue;
       const label = item.place.trim();
-      const keys = canonicalPlaceKeys(label);
+      const keys = canonicalPlaceKeys(label, item.activity);
       if (hasSharedKey(keys, seenKeys)) continue;
       keys.forEach((k) => seenKeys.add(k));
       result.push({ label, keys });
@@ -976,20 +1023,25 @@ function truncateList(list: string[], max = 3): string {
   return `${list.slice(0, max).join(", ")} 외 ${list.length - max}곳`;
 }
 
-// 한 일차의 장소/활동 라벨. place가 없으면 activity를 쓴다 — "일정 몇
-// 개"가 아니라 "무엇이 있는지"로 비교하기 위한 단위. canonicalPlaceKeys를
-// 그대로 재사용해 place든 activity든 같은 정규화 규칙으로 비교한다 —
-// activity 문자열("도착", "점심" 등)은 대개 괄호/대시가 없어 wholeKey
-// 하나만 생기므로 기존 정확 일치와 동작이 같다(회귀 위험 없음).
+// 버그 수정(2026-09-04) — 한 일차의 "장소" 라벨. 이전엔 place가 없으면
+// activity로 대체했는데("일정 몇 개"가 아니라 "무엇이 있는지"로
+// 비교하려는 의도였음), activity는 "씨앗호떡을 사 먹는다"/"점심
+// 식사"처럼 행동 서술·일반 명사인 경우가 많아 그대로 place 비교에
+// 섞이면 "AI가 요약한 핵심 차이"의 일차별 장소 구성 insight에 장소가
+// 아닌 값이 장소인 것처럼 노출되는 문제가 있었다(상세 일정 UI에서
+// 이미 고친 것과 같은 종류의 버그 — item.place 존재 여부만으로
+// 판단해야 하는데 activity로 대체하고 있었다). 이제 place가 실제로
+// 있는 item만 이 비교에 포함한다 — place가 없는 item은 "이 일차에
+// 장소가 없다"는 사실 그대로 daily place insight 계산에서 제외될 뿐,
+// activity 텍스트로 대신 채우지 않는다.
 function dayLabelEntries(day: PlanDay | undefined): CanonicalLabel[] {
   if (!day) return [];
   const seenKeys = new Set<string>();
   const result: CanonicalLabel[] = [];
   for (const item of day.items) {
-    const raw = item.place ?? item.activity;
-    if (!raw) continue;
-    const label = raw.trim();
-    const keys = canonicalPlaceKeys(label);
+    if (!item.place) continue;
+    const label = item.place.trim();
+    const keys = canonicalPlaceKeys(label, item.activity);
     if (hasSharedKey(keys, seenKeys)) continue;
     keys.forEach((k) => seenKeys.add(k));
     result.push({ label, keys });
@@ -1040,56 +1092,122 @@ export function buildComparison(planA: PlanStructure, planB: PlanStructure): Com
   const missingA = countMissing(planA);
   const missingB = countMissing(planB);
 
-  // v1.0: "핵심 차이"는 이 한 곳에서만 만든다(이전에는 이 key_differences와
-  // StepResult.tsx의 별도 scheduleSentence류 문장 생성이 따로 있었는데,
-  // 실제로 화면에 쓰이는 쪽은 StepResult뿐이라 이 필드는 죽은 코드였다).
-  // 우선 비교 축은 시간/비용/장소 구성 3가지만 쓴다 — 개수(일수/전체
-  // 항목 수) 나열은 v1.0에서 의도적으로 제외했다(단순 개수가 실제 선택에
-  // 크게 도움이 되지 않는다는 UT 인사이트). 동선(이동거리) 축은 실제
-  // 이동 API가 붙기 전까지 추가하지 않는다 — 없는 수치를 만들 수 없다.
+  // v1.0 (1차 우선순위 라운드, 2026-09-04) — "핵심 차이"를 단순 사실
+  // 나열에서 "비교 인사이트"로 확장한다(UT 피드백: 장소 구성/시간 개수
+  // 나열만으로는 와닿지 않음). 이 한 곳에서만 만든다. 우선순위:
+  //   1) 방문 장소 수 + "실제 계산 가능한" 이동 시간/거리 trade-off —
+  //      예시 문장("플랜 A는 방문 장소가 더 많지만 이동 거리는 더
+  //      짧아요")부터 이동 데이터가 근거다. 그런데 PlanItem에는 애초에
+  //      duration/distance 필드가 없다(v0.7 JSON 계약에 없음) —
+  //      devRouteMock.ts는 화면 검증용 가짜 데이터일 뿐이라 AI 인사이트
+  //      근거로 "절대" 쓰지 않는다(가드레일). 그래서 이 축의 자리는
+  //      실제 이동 API가 붙어 PlanItem에 계산된 시간/거리가 생기기
+  //      전까지는 항상 비어 있다 — 이전 라운드처럼 입력 비용으로
+  //      대신 채우지 않는다(비용은 아래 2번의 독립 인사이트로만 쓴다).
+  //   2) 입력 비용 합계 차이 — sumPlanCost(요약 카드와 완전히 같은
+  //      계산)를 그대로 재사용한다. 비용이 없거나 합산 불가면(total이
+  //      null) 인사이트를 만들지 않는다 — 억지로 채우지 않기.
+  //   3) 방문 장소 수 차이 — 위에서 이미 계산한 고유 장소 수
+  //      (placesA/placesB.length, collectCanonicalPlaces 기준)를 그대로
+  //      쓴다.
+  //   4) 시간 정보 구체성 — 기존 로직 그대로.
+  //   5) 일차별 고유 장소 구성 차이 — 기존 로직 그대로, 남는 자리만
+  //      채운다.
+  // 전체 최대 4개(핵심만), 근거가 약하면(차이가 없거나 데이터가 없으면)
+  // 절대 채우지 않는다 — "A가 더 좋다/추천한다"류 판단 문장도 만들지
+  // 않는다(관찰 가능한 차이만 서술).
   const keyDifferences: KeyDifference[] = [];
+
+  const costA = sumPlanCost(planA);
+  const costB = sumPlanCost(planB);
+  const placeCountA = placesA.length;
+  const placeCountB = placesB.length;
+
+  // 1) 방문 장소 수 + 실제 이동 시간/거리 trade-off — 위 주석대로 이
+  // 데이터 모델에서는 항상 근거가 없어 생성하지 않는다. 실제 이동
+  // API가 붙어 PlanItem에 계산된 duration/distance가 생기면 이 자리에
+  // 그 값 기준의 관계형 인사이트를 추가한다.
+
+  // 2) 입력 비용 합계 — 독립 인사이트.
+  if (costA.total !== null && costB.total !== null) {
+    if (costA.total !== costB.total) {
+      const more = costA.total > costB.total ? "A" : "B";
+      const diff = Math.abs(costA.total - costB.total);
+      keyDifferences.push({
+        criterion: "information_completeness",
+        text: `플랜 ${more}의 입력 비용 합계가 ${formatWon(diff)} 더 높아요.`,
+        title: `플랜 ${more}의 입력 비용 합계가 더 높아요.`,
+        detail: `A ${formatWon(costA.total)} · B ${formatWon(costB.total)}`,
+      });
+    } else {
+      keyDifferences.push({
+        criterion: "information_completeness",
+        text: "두 플랜의 입력 비용 합계는 같아요.",
+        title: "두 플랜의 입력 비용 합계는 같아요.",
+        detail: `A ${formatWon(costA.total)} · B ${formatWon(costB.total)}`,
+      });
+    }
+  }
+
+  // 3) 방문 장소 수 — 독립 인사이트.
+  if (keyDifferences.length < 4 && placeCountA !== placeCountB) {
+    const more = placeCountA > placeCountB ? "A" : "B";
+    const diff = Math.abs(placeCountA - placeCountB);
+    keyDifferences.push({
+      criterion: "place_composition",
+      text: `플랜 ${more}가 방문 장소가 ${diff}곳 더 많아요.`,
+      title: `플랜 ${more}가 방문 장소가 ${diff}곳 더 많아요.`,
+      detail: `방문 장소 A ${placeCountA}곳 · B ${placeCountB}곳`,
+    });
+  }
 
   const explicitTimeCount = (plan: PlanStructure) =>
     plan.days.reduce((sum, d) => sum + d.items.filter((i) => isExplicitTime(i.time)).length, 0);
   const explicitA = explicitTimeCount(planA);
   const explicitB = explicitTimeCount(planB);
-  if (explicitA !== explicitB) {
+  if (keyDifferences.length < 4 && explicitA !== explicitB) {
     const more = explicitA > explicitB ? "A" : "B";
     keyDifferences.push({
       criterion: "information_completeness",
       text: `플랜 ${more}는 정확한 시간이 입력된 일정이 더 많아요 (A ${explicitA}개, B ${explicitB}개).`,
+      title: `시간 정보는 플랜 ${more}가 더 구체적이에요.`,
+      detail: `시간 정보 A ${explicitA}개 · B ${explicitB}개`,
     });
   }
 
-  const costItemCount = (plan: PlanStructure) =>
-    plan.days.reduce((sum, d) => sum + d.items.filter((i) => i.stated_cost !== null).length, 0);
-  const costA = costItemCount(planA);
-  const costB = costItemCount(planB);
-  if (costA !== costB) {
-    const more = costA > costB ? "A" : "B";
-    keyDifferences.push({
-      criterion: "information_completeness",
-      text: `플랜 ${more}는 비용이 명시된 일정이 더 많아요 (A ${costA}개, B ${costB}개).`,
-    });
-  }
-
-  // 장소 구성은 실제로 차이가 있는 일차만, 최대 2개까지만 짚어준다 —
-  // "최대 3~4개"라는 전체 상한을 시간/비용 문장과 나눠 쓰기 위함.
+  // 버그 수정(2026-09-04) — 장소 구성은 실제로 차이가 있는 일차만, 남은
+  // 자리까지만 짚어준다. 이전엔 같은 일차의 "A에만 있는 장소"와 "B에만
+  // 있는 장소"를 서로 다른 두 insight로 나눠 push했는데, 이는 사실
+  // 하나("이 일차는 장소 구성이 다르다")의 두 면일 뿐이라 4개로 제한된
+  // slot을 같은 사실의 반복으로 낭비했다. 한 일차당 insight를 최대
+  // 1개만 만들고, 그 안에서 A/B 양쪽 차이를 함께("플랜 A에만: ... /
+  // 플랜 B에만: ...") 보여준다 — 한쪽에만 고유 장소가 있으면 그 쪽만
+  // 표시한다.
   for (const dayComparison of dailyPlaceComparison) {
     if (keyDifferences.length >= 4) break;
-    if (dayComparison.unique_to_b.length > 0) {
-      keyDifferences.push({
-        criterion: "place_composition",
-        text: `${dayComparison.day}일차에는 플랜 B에만 ${truncateList(dayComparison.unique_to_b)}이 포함되어 있어요.`,
-      });
+    const hasUniqueToA = dayComparison.unique_to_a.length > 0;
+    const hasUniqueToB = dayComparison.unique_to_b.length > 0;
+    if (!hasUniqueToA && !hasUniqueToB) continue;
+
+    const detailParts: string[] = [];
+    const textParts: string[] = [];
+    if (hasUniqueToA) {
+      const list = truncateList(dayComparison.unique_to_a).replaceAll(", ", " · ");
+      detailParts.push(`플랜 A에만: ${list}`);
+      textParts.push(`플랜 A에만 ${list}이 포함되어 있어요.`);
     }
-    if (keyDifferences.length >= 4) break;
-    if (dayComparison.unique_to_a.length > 0) {
-      keyDifferences.push({
-        criterion: "place_composition",
-        text: `${dayComparison.day}일차에는 플랜 A에만 ${truncateList(dayComparison.unique_to_a)}이 포함되어 있어요.`,
-      });
+    if (hasUniqueToB) {
+      const list = truncateList(dayComparison.unique_to_b).replaceAll(", ", " · ");
+      detailParts.push(`플랜 B에만: ${list}`);
+      textParts.push(`플랜 B에만 ${list}이 포함되어 있어요.`);
     }
+
+    keyDifferences.push({
+      criterion: "place_composition",
+      text: `${dayComparison.day}일차 장소 구성이 달라요. ${textParts.join(" ")}`,
+      title: `${dayComparison.day}일차 장소 구성이 달라요.`,
+      detail: detailParts.join(" / "),
+    });
   }
 
   if (keyDifferences.length === 0) {

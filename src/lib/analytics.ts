@@ -1,8 +1,18 @@
 import mixpanel from "mixpanel-browser";
-import type { ComparisonCriterionId, Decision, InputMode } from "@/types/plan";
+import type { Decision, InputMode, SelectedReasonId } from "@/types/plan";
 import { APP_VERSION } from "@/lib/appVersion";
 
 let initialized = false;
+
+// v1.0 — 한 번의 비교 시도(입력 시작~완료/재시작 전까지)를 묶어서 볼 수
+// 있는 id. distinct_id(기기 단위)만으로는 같은 사람이 여러 번 재시작한
+// 시도를 구분할 수 없어 추가한다. startComparisonSession()에서만
+// 새로 생성/교체하고, 그 사이 발생하는 모든 이벤트에 track()이 자동으로
+// 실어 보낸다 — 이벤트 하나하나에 인자로 넘길 필요가 없다.
+let currentComparisonId: string | null = null;
+export function setComparisonId(id: string | null) {
+  currentComparisonId = id;
+}
 
 /**
  * autocapture/session replay/기본 pageview 자동 이벤트는 모두 끈다 —
@@ -31,7 +41,10 @@ function getDeviceType(): "mobile" | "desktop" {
 
 function track(event: string, props?: Record<string, unknown>) {
   if (!initialized) return;
-  mixpanel.track(event, props);
+  mixpanel.track(event, {
+    ...(currentComparisonId ? { comparison_id: currentComparisonId } : {}),
+    ...props,
+  });
 }
 
 // tripfit_comparison_feedback의 session_id로 재사용하는, Mixpanel이
@@ -56,20 +69,95 @@ export function trackSampleLoaded(sampleOrder: number) {
   track("sample_loaded", { sample_order: sampleOrder });
 }
 
-export function trackPlanReady(plan: "a" | "b", inputMode: InputMode) {
-  track(plan === "a" ? "plan_a_ready" : "plan_b_ready", { input_mode: inputMode });
+// v1.0 — sample/own_plan 쪽은 flow_mode로, text/image 입력 방식 쪽은
+// input_mode로 부른다(서로 다른 축이라 이름이 겹치면 분석 시 헷갈린다).
+// 버그 수정(2026-09-05) — 링크/파일(PDF·TXT) 탭을 걷어내고 텍스트/이미지
+// 두 방식만 남기면서, 이 타입의 실제 의미도 "paste vs manual"(예전
+// 직접 일정 추가 모드, 이미 제거됨)에서 "text vs image"로 바뀌었다.
+// 필드 이름(plan_a_input_mode 등)과 이벤트 스키마는 그대로 두고 값만
+// 바꿨다 — 기존 분석 파이프라인이 이 필드를 참조하는 방식은 안 깨진다.
+export type PlanInputMethod = "text" | "image";
+
+export function trackPlanReady(plan: "a" | "b", flowMode: InputMode, method: PlanInputMethod) {
+  track(plan === "a" ? "plan_a_ready" : "plan_b_ready", { flow_mode: flowMode, input_mode: method });
+}
+
+// plan_a_ready/plan_b_ready보다 먼저, 그 플랜에 뭔가 처음 입력되는
+// 순간(빈 값 → 비어있지 않은 값)을 본다 — "입력 방식 선택 → 입력 시작
+// → 완료 → 비교 요청" 퍼널의 두 번째 단계.
+export function trackPlanStarted(plan: "a" | "b", flowMode: InputMode, method: PlanInputMethod) {
+  track(plan === "a" ? "plan_a_started" : "plan_b_started", { flow_mode: flowMode, input_mode: method });
+}
+
+// 기본값이 paste라 이 이벤트 자체가 "실제로 어떤 방식을 썼는지"의
+// 근거는 아니다(그건 plan_a_ready 등의 input_mode로 본다) — 오직
+// "모드를 실제로 바꾼 행동"만 본다. 값이 실제로 바뀔 때만 호출부에서
+// 불러야 한다(같은 값 재클릭은 여기로 오지 않음). 이름을
+// input_method_selected → input_method_changed로 바꿨다 — 이 이벤트가
+// 아직 커밋/배포된 적이 없어(uncommitted, preview 브랜치) 실제 Mixpanel
+// 데이터가 없으므로 이름을 바꿔도 기존 분석에 영향이 없다는 걸 git
+// history로 확인한 뒤 진행했다. flow_mode/app_version을 추가해 다른
+// funnel 이벤트와 같은 필드 구성을 갖추고, comparison_id는 track()이
+// 자동으로 실어 보낸다.
+export function trackInputMethodChanged(
+  plan: "a" | "b",
+  fromMethod: PlanInputMethod,
+  toMethod: PlanInputMethod,
+  flowMode: InputMode
+) {
+  track("input_method_changed", {
+    plan,
+    from_method: fromMethod,
+    to_method: toMethod,
+    flow_mode: flowMode,
+    app_version: APP_VERSION,
+  });
+}
+
+// 버그 수정(2026-09-05) — 이미지 입력을 실제 비교 플로우에 연결하면서
+// 추가한 3개 이벤트. 이미지 안 내용(추출된 일정 텍스트)은 어떤 인자로도
+// 받지 않는다 — 원문/자유서술 텍스트를 Mixpanel에 싣지 않는다는 기존
+// 가드레일과 동일하게 적용한다. comparison_requested보다 반드시 먼저
+// (그리고 별도로) 발화된다 — 이미지 선택 즉시 추출을 시도하는 시점에
+// 붙어 있어, 이미지를 고르기만 하고 실제 비교까지 가지 않은 시도도
+// 놓치지 않고 잡을 수 있다. image_parse_failed가 나면 그 day의 텍스트
+// 슬롯이 채워지지 않아 CTA가 활성화되지 않으므로, comparison_requested는
+// 구조적으로 그 실패 건에서는 절대 나중에 발화되지 않는다(별도 방지
+// 로직이 필요 없다).
+export function trackImageParseStarted(plan: "a" | "b") {
+  track("image_parse_started", { plan });
+}
+
+export function trackImageParseSucceeded(plan: "a" | "b") {
+  track("image_parse_succeeded", { plan });
+}
+
+// reason은 에러 타입 문자열(예: "unreadable"/"api_error"/"timeout")만
+// 담고, 이미지 내용이나 실패 원인 문장 원문은 담지 않는다.
+export function trackImageParseFailed(plan: "a" | "b", reason: string) {
+  track("image_parse_failed", { plan, reason });
 }
 
 // 일차별 입력 구조 실험(2026-08-24) — 여행 기간은 사용자가 이미 선택한
 // 값(숫자, PII/원문 아님)이라 comparison_requested에 속성만 추가한다.
 // 새 이벤트를 만들지 않고 기존 funnel 이벤트 이름/순서는 그대로 둔다.
+// v1.0에서 flow_mode(sample/own_plan)와 플랜별 input_mode(text/image)를
+// 함께 실어, 제출 시점 기준으로 "무엇으로 입력을 완성했는지"를 한 이벤트
+// 에서 바로 볼 수 있게 한다. 이 이벤트는 사용자가 실제로 CTA를 눌러
+// 비교 요청까지 도달했을 때만 발화된다(handleSubmitInput) — 이미지를
+// 선택/첨부만 한 시점에는 절대 발화되지 않는다.
 export function trackComparisonRequested(
-  inputMode: InputMode,
+  flowMode: InputMode,
+  planAInputMethod: PlanInputMethod,
+  planBInputMethod: PlanInputMethod,
   planADurationDays?: number | null,
   planBDurationDays?: number | null
 ) {
   track("comparison_requested", {
-    input_mode: inputMode,
+    flow_mode: flowMode,
+    plan_a_input_mode: planAInputMethod,
+    plan_b_input_mode: planBInputMethod,
+    app_version: APP_VERSION,
     ...(planADurationDays != null ? { plan_a_duration_days: planADurationDays } : {}),
     ...(planBDurationDays != null ? { plan_b_duration_days: planBDurationDays } : {}),
   });
@@ -145,7 +233,7 @@ export function trackDecisionSubmitted(decision: Decision) {
   track("decision_submitted", { decision });
 }
 
-export function trackDecisionCriterionSelected(criterion: ComparisonCriterionId) {
+export function trackDecisionCriterionSelected(criterion: SelectedReasonId) {
   track("decision_criterion_selected", { criterion });
 }
 

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { ComparisonCriterionId, Decision, InputMode } from "@/types/plan";
+import type { Decision, InputMode, SelectedReasonId } from "@/types/plan";
 import { APP_VERSION } from "@/lib/appVersion";
 
 // 브라우저에 노출돼도 안전한 anon/publishable key만 쓴다 — service_role/
@@ -14,7 +14,7 @@ export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, s
 export type UtResponseInput = {
   testerMode: InputMode;
   decision: Decision;
-  selectedCriteria: ComparisonCriterionId[];
+  selectedCriteria: SelectedReasonId[];
   decisionReason: string;
   helpfulnessScore: number | null;
   // 비교 결과 화면 자체의 도움 여부(후행지표) — 최종 helpfulnessScore(1~5)와는

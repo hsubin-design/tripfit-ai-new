@@ -32,10 +32,30 @@ export function getMockRouteSegment(index: number): MockRouteSegment {
   return MOCK_SEGMENTS[index % MOCK_SEGMENTS.length];
 }
 
-export function sumMockRoute(segmentCount: number): { minutes: number; km: number } {
+/** v1.0 — 상세 일정에서는 한 구간에 이동수단이 여러 개(예: 도보+차량)
+ *  있을 수 있다는 걸 화면에서 확인할 수 있어야 해서, 결정론적으로
+ *  일부 구간(index % 3 === 1)은 두 개를 이어 붙여 돌려준다 — 여전히
+ *  같은 index는 항상 같은 결과라 렌더마다 흔들리지 않는다. 실제
+ *  API가 붙기 전까지의 dev-only 자리표시일 뿐이다. */
+export function getMockRouteSegments(index: number): MockRouteSegment[] {
+  const primary = getMockRouteSegment(index);
+  if (index % 3 === 1) {
+    return [primary, getMockRouteSegment(index + 1)];
+  }
+  return [primary];
+}
+
+// 버그 수정(2026-09-05) — 이전엔 "일차 item 개수 - 1"만큼 무조건 0부터
+// 연속으로 합산해, activity-only item(예: "숙소 이동", "카페에서 휴식")이
+// 낀 구간에도 이동 정보가 더해졌다. 실제 장소(place)가 있는 item 사이
+// 구간만 진짜 이동으로 볼 수 있으므로, 호출부가 "둘 다 place가 있는
+// 구간의 index만" 걸러서 넘기고 여기서는 그 index들만 그대로 합산한다
+// — mock 표 자체(index→구간 매핑)는 바뀌지 않아 같은 index는 여전히
+// 항상 같은 값을 돌려준다(렌더 안정성 유지).
+export function sumMockRoute(validSegmentIndices: number[]): { minutes: number; km: number } {
   let minutes = 0;
   let km = 0;
-  for (let i = 0; i < segmentCount; i++) {
+  for (const i of validSegmentIndices) {
     const seg = getMockRouteSegment(i);
     minutes += seg.minutes;
     km += seg.km;

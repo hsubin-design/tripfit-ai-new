@@ -6,7 +6,6 @@ import StepProcessing from "@/components/StepProcessing";
 import StepResult from "@/components/StepResult";
 import StepDecision from "@/components/StepDecision";
 import StepReason from "@/components/StepReason";
-import StepRating from "@/components/StepRating";
 import StepComplete from "@/components/StepComplete";
 import StepFeedback from "@/components/StepFeedback";
 import RouteCompareDev from "@/components/RouteCompareDev";
@@ -16,10 +15,11 @@ import ResetConfirmDialog from "@/components/ResetConfirmDialog";
 import { buildComparison } from "@/lib/dummyComparison";
 import { requestPlanStructuring, StructuringError } from "@/lib/structurePlans";
 import { SAMPLE_PLAN_A_DAY_TEXTS, SAMPLE_PLAN_B_DAY_TEXTS } from "@/lib/sampleData";
-import { joinDayTexts, resizeDayTexts } from "@/lib/planDayText";
+import { joinDayTexts, resizeDayTexts, typedLength } from "@/lib/planDayText";
 import {
   getAnalyticsDistinctId,
   initAnalytics,
+  setComparisonId,
   trackComparisonCompleted,
   trackComparisonFailed,
   trackComparisonHelpfulnessSelected,
@@ -33,10 +33,21 @@ import {
   trackHelpfulnessSubmitted,
   trackOriginalReopened,
   trackPlanReady,
+  trackPlanStarted,
   trackSampleLoaded,
+  type PlanInputMethod,
 } from "@/lib/analytics";
 import { insertComparisonFeedback, insertUtResponse } from "@/lib/supabase";
-import type { ComparisonCriterionId, ComparisonResult, Decision, InputMode } from "@/types/plan";
+import type { ComparisonResult, Decision, InputMode, SelectedReasonId } from "@/types/plan";
+
+// resizeDayTexts(planDayText.ts)와 같은 원칙 — 뒤쪽만 자르거나 새
+// day는 null(텍스트 day)로 채운다. planAImages 전용이라 별도 파일로
+// export하지 않고 이 파일 안에서만 쓴다.
+function resizeImages(current: (string | null)[], newLength: number): (string | null)[] {
+  const next = current.slice(0, newLength);
+  while (next.length < newLength) next.push(null);
+  return next;
+}
 
 type Step =
   | "input"
@@ -47,24 +58,50 @@ type Step =
   | "inputExploration"
   | "decision"
   | "reason"
-  | "rating"
   | "complete"
   | "feedback";
 
 export default function Home() {
   const [step, setStep] = useState<Step>("input");
 
-  // 일차별 입력 구조 실험(2026-08-24) — Plan A/B는 이제 하나의 큰
-  // textarea가 아니라 "여행 기간 선택 + 일차별 자유 텍스트"로 입력받는다.
-  // planAText/planBText(구조화 API에 보내는 하나의 문자열, 결과 화면의
-  // "원문 다시보기")는 이 상태에서 매 렌더 계산해 낸다 — 기존 비교
-  // 로직/결과 화면은 이 계산된 문자열만 보고 동작하므로 변경이 없다.
+  // 일차별 입력 구조 실험(2026-08-24) — Plan A/B는 하나의 큰 textarea가
+  // 아니라 "여행 기간 선택 + 일차별 자유 텍스트"로 입력받는다.
+  //
+  // 버그 수정(2026-09-05, 2차) — 이미지 입력을 실제 비교 플로우에
+  // 연결하면서 planAImages/planBImages(day별 업로드 이미지 data URL,
+  // 텍스트 day는 null)를 추가했다. planAPasteDayTexts[i]는 이제
+  // "타이핑한 텍스트"뿐 아니라 "이미지에서 추출된 텍스트"도 담을 수
+  // 있다 — 어느 쪽이든 이후 파이프라인(joinDayTexts → structure-plan)은
+  // 완전히 동일하게 취급한다. planAInputMethod/planBInputMethod(analytics
+  // 전용, text/image)는 이제 그 플랜의 day 중 하나라도 이미지면
+  // "image"로 계산되는 파생값이다 — 별도 state로 들고 다니지 않는다.
+  //
+  // planADayTexts/planADuration은 실제 제출·API·"원문 다시보기"가 보는
+  // 최종 결과이고, page.tsx에 lifted돼 있는 이유는 "not_travel_content"
+  // 오류 후 입력 화면으로 돌아왔을 때(StepInput이 리마운트됨)도 값이
+  // (이미지 포함) 남아있어야 하기 때문 — 컴포넌트 로컬 state였다면
+  // 리마운트 시 사라진다.
+  //
+  // 버그 수정(2026-09-06, 2차) — planAPasteDayTexts는 이제 "비교에 쓸
+  // 선별된 텍스트(itineraryText)"만 담는다. 이미지에서 실제로 읽힌
+  // 전체 원문(rawText — 블로그 UI/감상 문장 등 노이즈 포함 가능)은
+  // 별도로 planARawTexts에 담아, "원문 다시보기"에서만 쓴다. 텍스트로
+  // 직접 입력한 day는 rawText 개념이 없으므로 빈 문자열로 둔다 —
+  // OriginalDayBlock이 imageDataUrl===null이면 이 값을 아예 쓰지 않는다.
   const [planADuration, setPlanADuration] = useState<number | null>(null);
-  const [planADayTexts, setPlanADayTexts] = useState<string[]>([]);
+  const [planAPasteDayTexts, setPlanAPasteDayTexts] = useState<string[]>([]);
+  const [planARawTexts, setPlanARawTexts] = useState<string[]>([]);
+  const [planAImages, setPlanAImages] = useState<(string | null)[]>([]);
   const [planBDuration, setPlanBDuration] = useState<number | null>(null);
-  const [planBDayTexts, setPlanBDayTexts] = useState<string[]>([]);
+  const [planBPasteDayTexts, setPlanBPasteDayTexts] = useState<string[]>([]);
+  const [planBRawTexts, setPlanBRawTexts] = useState<string[]>([]);
+  const [planBImages, setPlanBImages] = useState<(string | null)[]>([]);
+  const planADayTexts = planAPasteDayTexts;
+  const planBDayTexts = planBPasteDayTexts;
   const planAText = joinDayTexts(planADayTexts);
   const planBText = joinDayTexts(planBDayTexts);
+  const planAInputMethod: PlanInputMethod = planAImages.some((img) => img !== null) ? "image" : "text";
+  const planBInputMethod: PlanInputMethod = planBImages.some((img) => img !== null) ? "image" : "text";
   const [inputMode, setInputMode] = useState<InputMode | null>(null);
 
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
@@ -109,11 +146,26 @@ export default function Home() {
   // 화면이라 별도 analytics/Supabase 기록은 하지 않는다.
   const [routeCompareDay, setRouteCompareDay] = useState<number | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
-  const [selectedCriteria, setSelectedCriteria] = useState<ComparisonCriterionId[]>([]);
+  const [selectedCriteria, setSelectedCriteria] = useState<SelectedReasonId[]>([]);
   const [reasonText, setReasonText] = useState("");
   const [helpfulness, setHelpfulness] = useState<number | null>(null);
-  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
-  const [ratingSubmitError, setRatingSubmitError] = useState<string | null>(null);
+  // 3차 우선순위(2026-09-04) — 완료 화면 개편. 예전엔 decision+reason+
+  // helpfulness를 한 화면(StepRating)에서 한 번에 Supabase에 저장했는데,
+  // 이제 helpfulness는 완료 화면에서 나중에(선택적으로) 고르므로 제출이
+  // 두 시점으로 나뉜다: (1) "다음"을 누르면 decision/reason을 helpfulness
+  // 없이 먼저 저장하고 곧바로 완료 화면으로 이동 — isSubmittingReason/
+  // reasonSubmitError가 이 제출 상태를 담당한다(예전 isSubmittingRating/
+  // ratingSubmitError와 같은 역할, 화면만 옮겨졌다). (2) 완료 화면에서
+  // helpfulness를 고르면 그 즉시 별도로 한 번 더 저장한다 —
+  // isSavingHelpfulness/helpfulnessSaveError가 그 상태를 담당한다. Supabase
+  // anon key는 INSERT만 가능하도록 RLS가 걸려 있어(supabase.ts 주석) 먼저
+  // 저장한 행을 나중에 UPDATE할 수 없다 — 그래서 helpfulness를 고르면
+  // decision/reason/기준을 포함해 한 번 더 insert한다(같은 insertUtResponse
+  // 함수, 같은 테이블/컬럼 구조를 그대로 재사용 — 새 스키마/RLS 변경 없음).
+  const [isSubmittingReason, setIsSubmittingReason] = useState(false);
+  const [reasonSubmitError, setReasonSubmitError] = useState<string | null>(null);
+  const [isSavingHelpfulness, setIsSavingHelpfulness] = useState(false);
+  const [helpfulnessSaveError, setHelpfulnessSaveError] = useState<string | null>(null);
   // 상단 GNB "TripFit" 로고 → 처음부터 다시 시작. 아무 것도 입력/진행
   // 하지 않은 순수 초기 상태면 바로 초기화하고, 뭔가 입력했거나 결과·
   // 결정 단계까지 진행했다면(둘 다 planA/B 상태가 채워져 있어야만
@@ -127,23 +179,71 @@ export default function Home() {
   const processingStartedAtRef = useRef(0);
   const planAReadyFiredRef = useRef(false);
   const planBReadyFiredRef = useRef(false);
+  // v1.0 — plan_a_ready/b_ready보다 먼저 "뭔가 입력을 시작했다"를 보는
+  // plan_a_started/b_started 전용 1회성 가드. ready와 마찬가지로
+  // startComparisonSession()에서 매번 리셋된다.
+  const planAStartedFiredRef = useRef(false);
+  const planBStartedFiredRef = useRef(false);
   // 직전에 실제로 이벤트를 보낸 helpfulness 값 — state(comparisonHelpfulness)로
   // 비교하면, 같은 값을 아주 빠르게 연속 클릭했을 때 React가 두 클릭을
   // 한 배치로 묶어 아직 리렌더되지 않은 stale 값을 보고 중복 전송할 수
   // 있다(state는 다음 렌더에서만 갱신되지만 ref는 그 자리에서 바로
   // 갱신됨). ref로 비교해야 클릭 시점에 항상 최신 값을 본다.
   const lastFiredHelpfulnessRef = useRef<"helpful" | "not_helpful" | null>(null);
+  // handleSelectHelpfulness 전용 — 같은 점수를 연속 클릭했을 때 매번
+  // 새로 insert하지 않도록 막는다. lastFiredHelpfulnessRef와 동일한
+  // 이유로 ref를 쓴다(클릭 시점에 항상 최신 값을 봐야 함).
+  const lastSavedHelpfulnessRef = useRef<number | null>(null);
 
   useEffect(() => {
     initAnalytics();
     startComparisonSession();
   }, []);
 
+  // v1.0 — plan_a_started/ready, plan_b_started/ready는 이제 여러
+  // 입력 경로(붙여넣기 textarea든, 직접 일정 추가의 item 편집/추가/
+  // 삭제든)에서 만들어질 수 있다. 경로마다 따로 추적 로직을 심는 대신,
+  // "최종 계산된 텍스트(planAText/planBText)가 실제로 바뀔 때"만 보는
+  // effect 하나로 통일한다 — 어느 모드로 만들어졌든 결과가 같으면
+  // 같은 방식으로 감지된다. sample 불러오기도 planAText가 이 effect의
+  // 트리거이므로 별도 처리가 필요 없다.
+  // "started"는 joinDayTexts가 붙이는 "N일차" 헤더가 아니라, 사용자가
+  // 실제로 타이핑한 글자 수(typedLength)만 본다 — 기간만 고르고 아직
+  // 아무것도 안 썼을 때 헤더 글자만으로 false positive가 나는 걸
+  // 막는다. "ready"는 기존과 동일하게 joinDayTexts 결과(planAText)
+  // 기준 MIN_LEN을 그대로 쓴다(이미 있던 동작, 이번에 바꾸지 않음).
+  useEffect(() => {
+    if (!planAStartedFiredRef.current && typedLength(planADayTexts) > 0) {
+      planAStartedFiredRef.current = true;
+      trackPlanStarted("a", inputMode ?? "own_plan", planAInputMethod);
+    }
+    if (!planAReadyFiredRef.current && isPlanReady(planAText)) {
+      planAReadyFiredRef.current = true;
+      trackPlanReady("a", inputMode ?? "own_plan", planAInputMethod);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planAText]);
+  useEffect(() => {
+    if (!planBStartedFiredRef.current && typedLength(planBDayTexts) > 0) {
+      planBStartedFiredRef.current = true;
+      trackPlanStarted("b", inputMode ?? "own_plan", planBInputMethod);
+    }
+    if (!planBReadyFiredRef.current && isPlanReady(planBText)) {
+      planBReadyFiredRef.current = true;
+      trackPlanReady("b", inputMode ?? "own_plan", planBInputMethod);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planBText]);
+
   function startComparisonSession() {
     comparisonStartedAtRef.current = Date.now();
     planAReadyFiredRef.current = false;
     planBReadyFiredRef.current = false;
+    planAStartedFiredRef.current = false;
+    planBStartedFiredRef.current = false;
     lastFiredHelpfulnessRef.current = null;
+    lastSavedHelpfulnessRef.current = null;
+    setComparisonId(typeof crypto !== "undefined" ? crypto.randomUUID() : `${Date.now()}`);
     trackComparisonStarted();
   }
 
@@ -153,51 +253,73 @@ export default function Home() {
 
   function handleChangePlanADuration(days: number) {
     setPlanADuration(days);
-    setPlanADayTexts((prev) => resizeDayTexts(prev, days));
+    setPlanAPasteDayTexts((prev) => resizeDayTexts(prev, days));
+    setPlanARawTexts((prev) => resizeDayTexts(prev, days));
+    setPlanAImages((prev) => resizeImages(prev, days));
     setInputMode("own_plan");
   }
   function handleChangePlanBDuration(days: number) {
     setPlanBDuration(days);
-    setPlanBDayTexts((prev) => resizeDayTexts(prev, days));
+    setPlanBPasteDayTexts((prev) => resizeDayTexts(prev, days));
+    setPlanBRawTexts((prev) => resizeDayTexts(prev, days));
+    setPlanBImages((prev) => resizeImages(prev, days));
     setInputMode("own_plan");
   }
 
-  function handleChangePlanADayText(index: number, value: string) {
-    const next = [...planADayTexts];
+  // 버그 수정(2026-09-05, 2차) — 그 day가 이미지로 채워져 있었는데
+  // 사용자가 텍스트 탭에서 직접 값을 고치면, 더 이상 "이미지에서 그대로
+  // 추출된 내용"이 아니게 되므로 이미지 슬롯을 함께 비운다 — 수정한
+  // 텍스트를 이미지에서 나온 것처럼 위장하지 않기 위함이다.
+  // 버그 수정(2026-09-06, 2차) — 같은 이유로 그 day의 rawText(원문
+  // 다시보기용)도 함께 비운다. 이미지가 없어졌으니 "이미지에서 읽은
+  // 원문"이라는 값 자체가 더 이상 의미가 없다.
+  function handleChangePlanAPasteText(index: number, value: string) {
+    const next = [...planAPasteDayTexts];
     next[index] = value;
-    setPlanADayTexts(next);
+    setPlanAPasteDayTexts(next);
+    setPlanARawTexts((prev) => prev.map((t, i) => (i === index ? "" : t)));
+    setPlanAImages((prev) => prev.map((img, i) => (i === index ? null : img)));
     setInputMode("own_plan");
-    if (!planAReadyFiredRef.current && isPlanReady(joinDayTexts(next))) {
-      planAReadyFiredRef.current = true;
-      trackPlanReady("a", "own_plan");
-    }
   }
-  function handleChangePlanBDayText(index: number, value: string) {
-    const next = [...planBDayTexts];
+  function handleChangePlanBPasteText(index: number, value: string) {
+    const next = [...planBPasteDayTexts];
     next[index] = value;
-    setPlanBDayTexts(next);
+    setPlanBPasteDayTexts(next);
+    setPlanBRawTexts((prev) => prev.map((t, i) => (i === index ? "" : t)));
+    setPlanBImages((prev) => prev.map((img, i) => (i === index ? null : img)));
     setInputMode("own_plan");
-    if (!planBReadyFiredRef.current && isPlanReady(joinDayTexts(next))) {
-      planBReadyFiredRef.current = true;
-      trackPlanReady("b", "own_plan");
-    }
+  }
+
+  // 이미지 추출 성공 시 그 day의 텍스트/이미지 슬롯을 한 번에 채운다.
+  // 버그 수정(2026-09-06, 2차) — itineraryText(선별된 값)를 비교용
+  // day 텍스트 슬롯에 담아 이후 joinDayTexts/structure-plan을 그대로
+  // 거치게 하고, rawText(전체 원문)는 별도 슬롯에 담아 "원문 다시보기"
+  // 전용으로만 쓴다 — 실제 일정과 무관한 블로그 UI·감상 문장이
+  // 비교 데이터에 섞이던 문제(2026-09-06 조사)의 근본 수정이다.
+  function handleImageExtractedPlanA(index: number, dataUrl: string, itineraryText: string, rawText: string) {
+    setPlanAPasteDayTexts((prev) => prev.map((t, i) => (i === index ? itineraryText : t)));
+    setPlanARawTexts((prev) => prev.map((t, i) => (i === index ? rawText : t)));
+    setPlanAImages((prev) => prev.map((img, i) => (i === index ? dataUrl : img)));
+    setInputMode("own_plan");
+  }
+  function handleImageExtractedPlanB(index: number, dataUrl: string, itineraryText: string, rawText: string) {
+    setPlanBPasteDayTexts((prev) => prev.map((t, i) => (i === index ? itineraryText : t)));
+    setPlanBRawTexts((prev) => prev.map((t, i) => (i === index ? rawText : t)));
+    setPlanBImages((prev) => prev.map((img, i) => (i === index ? dataUrl : img)));
+    setInputMode("own_plan");
   }
 
   function handleLoadSample() {
     setPlanADuration(SAMPLE_PLAN_A_DAY_TEXTS.length);
-    setPlanADayTexts([...SAMPLE_PLAN_A_DAY_TEXTS]);
+    setPlanAPasteDayTexts([...SAMPLE_PLAN_A_DAY_TEXTS]);
+    setPlanARawTexts(new Array(SAMPLE_PLAN_A_DAY_TEXTS.length).fill(""));
+    setPlanAImages(new Array(SAMPLE_PLAN_A_DAY_TEXTS.length).fill(null));
     setPlanBDuration(SAMPLE_PLAN_B_DAY_TEXTS.length);
-    setPlanBDayTexts([...SAMPLE_PLAN_B_DAY_TEXTS]);
+    setPlanBPasteDayTexts([...SAMPLE_PLAN_B_DAY_TEXTS]);
+    setPlanBRawTexts(new Array(SAMPLE_PLAN_B_DAY_TEXTS.length).fill(""));
+    setPlanBImages(new Array(SAMPLE_PLAN_B_DAY_TEXTS.length).fill(null));
     setInputMode("sample");
     trackSampleLoaded(1);
-    if (!planAReadyFiredRef.current) {
-      planAReadyFiredRef.current = true;
-      trackPlanReady("a", "sample");
-    }
-    if (!planBReadyFiredRef.current) {
-      planBReadyFiredRef.current = true;
-      trackPlanReady("b", "sample");
-    }
   }
 
   // durationOverride는 Input Exploration variant 전용 — setState 직후
@@ -209,6 +331,8 @@ export default function Home() {
   function handleSubmitInput(durationOverride?: { a: number; b: number }) {
     trackComparisonRequested(
       inputMode ?? "own_plan",
+      planAInputMethod,
+      planBInputMethod,
       durationOverride?.a ?? planADuration,
       durationOverride?.b ?? planBDuration
     );
@@ -230,9 +354,13 @@ export default function Home() {
     bDayTexts: string[]
   ) {
     setPlanADuration(aDuration);
-    setPlanADayTexts(aDayTexts);
+    setPlanAPasteDayTexts(aDayTexts);
+    setPlanARawTexts(new Array(aDuration).fill(""));
+    setPlanAImages(new Array(aDuration).fill(null));
     setPlanBDuration(bDuration);
-    setPlanBDayTexts(bDayTexts);
+    setPlanBPasteDayTexts(bDayTexts);
+    setPlanBRawTexts(new Array(bDuration).fill(""));
+    setPlanBImages(new Array(bDuration).fill(null));
     setInputMode("own_plan");
     handleSubmitInput({ a: aDuration, b: bDuration });
   }
@@ -274,6 +402,15 @@ export default function Home() {
     setStructuringFailure(null);
     setFocusPlan(invalidPlans && invalidPlans.length === 1 ? invalidPlans[0] : null);
     setStep("input");
+    // v1.0 — not_travel_content로 돌아와 내용을 고친 뒤 다시 제출하는
+    // 것은 처음부터 다시 시작하는 것(handleRestart)과는 다르지만,
+    // 계측 관점에서는 "새 비교 시도"로 본다 — 새 comparison_id를 받고
+    // ready/started 1회성 가드도 다시 열려야, 고친 뒤 재제출했을 때
+    // comparison_requested/plan_a_ready 등이 새 id로 온전히 다시
+    // 기록된다. startComparisonSession()은 planA/B 입력값(duration/
+    // 텍스트/item/입력 방식)은 전혀 건드리지 않으므로 "값 유지"
+    // 요구사항과 충돌하지 않는다.
+    startComparisonSession();
   }
 
   function handleReopenOriginal(plan: "a" | "b") {
@@ -344,57 +481,96 @@ export default function Home() {
     setStep("reason");
   }
 
-  function handleChangeCriteria(next: ComparisonCriterionId[]) {
+  function handleChangeCriteria(next: SelectedReasonId[]) {
     const added = next.find((id) => !selectedCriteria.includes(id));
     if (added) trackDecisionCriterionSelected(added);
     setSelectedCriteria(next);
   }
 
-  function handleReasonNext() {
-    if (decision) trackDecisionReasonSubmitted(decision, reasonText.trim().length);
-    setStep("rating");
-  }
+  // 3차 우선순위 — decision_reason_submitted는 기존과 동일하게 "다음"을
+  // 누르는 즉시(제출 성공 여부와 무관하게) 발생한다(회귀 없음). 그
+  // 다음이 예전과 달라진 지점: 이전엔 여기서 helpfulness 화면(rating)
+  // 으로만 넘어가고 실제 Supabase 저장은 그 화면의 "제출하기"에서
+  // 이뤄졌는데, 이제 helpfulness가 완료 화면으로 옮겨가면서 그 전에
+  // decision/reason을 먼저 저장해야 완료 화면에 "제출 완료" 상태로
+  // 도착할 수 있다. helpfulnessScore는 아직 모르므로 null로 보낸다 —
+  // 완료 화면에서 고르면 handleSelectHelpfulness가 별도로 다시 저장한다.
+  async function handleReasonNext() {
+    if (!decision) return;
+    trackDecisionReasonSubmitted(decision, reasonText.trim().length);
 
-  // 제출은 Supabase INSERT가 성공한 뒤에만 완료 화면으로 넘어간다 —
-  // 실패하면 화면 전환도, Mixpanel 제출 이벤트도 하지 않고 사용자가
-  // 입력/선택한 값은 그대로 유지해 재시도할 수 있게 한다. 여기서
-  // Supabase로 보내는 값에는 일정 원문(Plan A/B)이나 비교 결과가
-  // 전혀 포함되지 않는다 — insertUtResponse의 인자 타입 자체가 그
-  // 값을 받지 않는다.
-  async function handleRatingSubmit() {
-    if (helpfulness === null || decision === null) return;
-
-    setIsSubmittingRating(true);
-    setRatingSubmitError(null);
+    if (isSubmittingReason) return;
+    setIsSubmittingReason(true);
+    setReasonSubmitError(null);
 
     const { success } = await insertUtResponse({
       testerMode: inputMode ?? "own_plan",
       decision,
       selectedCriteria,
       decisionReason: reasonText,
-      helpfulnessScore: helpfulness,
+      helpfulnessScore: null,
       comparisonHelpfulness,
       comparisonHelpfulnessReason,
     });
 
-    setIsSubmittingRating(false);
+    setIsSubmittingReason(false);
 
     if (!success) {
-      setRatingSubmitError("제출에 실패했습니다. 잠시 후 다시 시도해주세요.");
+      setReasonSubmitError("제출에 실패했습니다. 잠시 후 다시 시도해주세요.");
       return;
     }
 
-    trackHelpfulnessSubmitted(helpfulness);
     trackComparisonCompleted(Date.now() - comparisonStartedAtRef.current);
     setStep("complete");
+  }
+
+  // 3차 우선순위 — 완료 화면의 1~5 helpfulness. 별도 "제출하기" 버튼
+  // 없이 숫자를 누르는 즉시 저장을 시도한다. decision/reason은 이미
+  // handleReasonNext에서 저장됐지만, RLS가 anon key에 UPDATE를 허용하지
+  // 않아(supabase.ts 주석) 그 행을 수정할 수 없다 — 그래서 helpfulness가
+  // 포함된 완전한 스냅샷을 같은 insertUtResponse로 한 번 더 insert한다
+  // (테이블/컬럼 구조는 그대로, 새 스키마 없음). 실패해도 helpfulness는
+  // optional이라 화면 전환을 막지 않고, 에러만 조용히 보여준다 —
+  // "새로 비교하기"는 이 성공 여부와 무관하게 항상 눌러야 한다.
+  async function handleSelectHelpfulness(score: number) {
+    setHelpfulness(score);
+    if (lastSavedHelpfulnessRef.current === score) return;
+    lastSavedHelpfulnessRef.current = score;
+    if (decision === null) return;
+
+    setIsSavingHelpfulness(true);
+    setHelpfulnessSaveError(null);
+
+    const { success } = await insertUtResponse({
+      testerMode: inputMode ?? "own_plan",
+      decision,
+      selectedCriteria,
+      decisionReason: reasonText,
+      helpfulnessScore: score,
+      comparisonHelpfulness,
+      comparisonHelpfulnessReason,
+    });
+
+    setIsSavingHelpfulness(false);
+
+    if (!success) {
+      setHelpfulnessSaveError("저장하지 못했어요. 다시 시도해주세요.");
+      return;
+    }
+
+    trackHelpfulnessSubmitted(score);
   }
 
   function handleRestart() {
     setStep("input");
     setPlanADuration(null);
-    setPlanADayTexts([]);
+    setPlanAPasteDayTexts([]);
+    setPlanARawTexts([]);
+    setPlanAImages([]);
     setPlanBDuration(null);
-    setPlanBDayTexts([]);
+    setPlanBPasteDayTexts([]);
+    setPlanBRawTexts([]);
+    setPlanBImages([]);
     setInputMode(null);
     setComparisonResult(null);
     setComparisonHelpfulness(null);
@@ -408,8 +584,10 @@ export default function Home() {
     setSelectedCriteria([]);
     setReasonText("");
     setHelpfulness(null);
-    setIsSubmittingRating(false);
-    setRatingSubmitError(null);
+    setIsSubmittingReason(false);
+    setReasonSubmitError(null);
+    setIsSavingHelpfulness(false);
+    setHelpfulnessSaveError(null);
     startComparisonSession();
   }
 
@@ -417,8 +595,8 @@ export default function Home() {
     return (
       planADuration !== null ||
       planBDuration !== null ||
-      planADayTexts.some((t) => t.trim().length > 0) ||
-      planBDayTexts.some((t) => t.trim().length > 0)
+      planAPasteDayTexts.some((t) => t.trim().length > 0) ||
+      planBPasteDayTexts.some((t) => t.trim().length > 0)
     );
   }
 
@@ -441,23 +619,32 @@ export default function Home() {
         {step === "input" && (
           <StepInput
             planADuration={planADuration}
+            planAPasteDayTexts={planAPasteDayTexts}
+            planAImages={planAImages}
             planADayTexts={planADayTexts}
             onChangePlanADuration={handleChangePlanADuration}
-            onChangePlanADayText={handleChangePlanADayText}
+            onChangePlanAPasteText={handleChangePlanAPasteText}
+            onImageExtractedPlanA={handleImageExtractedPlanA}
             planBDuration={planBDuration}
+            planBPasteDayTexts={planBPasteDayTexts}
+            planBImages={planBImages}
             planBDayTexts={planBDayTexts}
             onChangePlanBDuration={handleChangePlanBDuration}
-            onChangePlanBDayText={handleChangePlanBDayText}
+            onChangePlanBPasteText={handleChangePlanBPasteText}
+            onImageExtractedPlanB={handleImageExtractedPlanB}
             onLoadSample={handleLoadSample}
             onSubmit={handleSubmitInput}
             onFeedbackClick={() => setStep("feedback")}
             onLogoClick={handleLogoClick}
             autoFocusPlan={focusPlan}
             onAutoFocusConsumed={() => setFocusPlan(null)}
-            onOpenInputExploration={() => setStep("inputExploration")}
           />
         )}
 
+        {/* v1.0 dev — StepInput의 진입 버튼은 제거했지만(사용자 화면
+            노출 경로 없음), 코드 기록용으로 이 화면/경로 자체는 그대로
+            남겨둔다. setStep("inputExploration")을 부르는 곳이 이제
+            없어 도달 불가능하다. */}
         {step === "inputExploration" && (
           <StepInputExplorationDev onBack={() => setStep("input")} onSubmit={handleSubmitFromExploration} />
         )}
@@ -480,8 +667,12 @@ export default function Home() {
         {step === "result" && comparisonResult && (
           <StepResult
             result={comparisonResult}
-            planAText={planAText}
-            planBText={planBText}
+            planADayTexts={planADayTexts}
+            planARawTexts={planARawTexts}
+            planAImages={planAImages}
+            planBDayTexts={planBDayTexts}
+            planBRawTexts={planBRawTexts}
+            planBImages={planBImages}
             onBack={() => setStep("input")}
             onNext={() => setStep("decision")}
             onReopenOriginal={handleReopenOriginal}
@@ -522,27 +713,20 @@ export default function Home() {
             onChangeReasonText={setReasonText}
             onBack={() => setStep("decision")}
             onNext={handleReasonNext}
-          />
-        )}
-
-        {step === "rating" && (
-          <StepRating
-            score={helpfulness}
-            onChangeScore={setHelpfulness}
-            onBack={() => setStep("reason")}
-            onSubmit={handleRatingSubmit}
-            isSubmitting={isSubmittingRating}
-            submitError={ratingSubmitError}
+            isSubmitting={isSubmittingReason}
+            submitError={reasonSubmitError}
           />
         )}
 
         {step === "complete" && (
           <StepComplete
-            inputMode={inputMode}
             decision={decision}
             selectedCriteria={selectedCriteria}
             reasonText={reasonText}
             helpfulness={helpfulness}
+            onSelectHelpfulness={handleSelectHelpfulness}
+            isSavingHelpfulness={isSavingHelpfulness}
+            helpfulnessSaveError={helpfulnessSaveError}
             onRestart={handleRestart}
           />
         )}

@@ -4,7 +4,15 @@
 // 애매하면 배지를 아예 보여주지 않는다(추측성 "기타"도 만들지 않음).
 // 향후 장소 API에서 신뢰 가능한 category를 받으면 이 함수 대신 그 값을
 // 우선 쓰도록 교체할 수 있게, 반환 타입과 함수 하나로 분리해뒀다.
-export type PlaceCategory = "교통" | "관광지" | "식당" | "숙소" | "액티비티";
+// 버그 수정(2026-09-05) — "카페" 추가. 이전엔 식당 하나로 묶여
+// 있었는데, 커피·디저트·베이커리·브런치 중심 장소와 식사가 주목적인
+// 일반 음식점은 사용자에게 다른 방문 목적으로 읽히므로 구분한다.
+export type PlaceCategory = "교통" | "관광지" | "식당" | "카페" | "숙소" | "액티비티";
+
+// structure-plan API(route.ts)가 category를 스키마 enum으로 요구할 때
+// 이 6개 값을 그대로 재사용한다 — 허용 category 값이 두 곳(여기,
+// route.ts)에 따로 정의돼 있다가 어긋나는 것을 막기 위한 단일 출처.
+export const PLACE_CATEGORIES: PlaceCategory[] = ["교통", "관광지", "식당", "카페", "숙소", "액티비티"];
 
 const CATEGORY_KEYWORDS: { category: PlaceCategory; keywords: string[] }[] = [
   { category: "교통", keywords: ["역", "공항", "터미널", "정류장", "항구", "여객터미널"] },

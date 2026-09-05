@@ -13,6 +13,15 @@ import type { PlanDay, PlanItem, PlanStructure } from "@/types/plan";
 const PURE_WON_PATTERN = /^\d[\d,]*원$/;
 const FREE_PATTERN = /^(무료|0원)$/;
 
+/** stated_cost가 "무료"/"0원"인지("합산 가능한지"가 아니라 "값 자체가
+ *  0원 계열인지")만 본다 — 상세 일정 비용 chip을 유료/무료로 다르게
+ *  표시하기 위한 순수 UI 판별용이다. 값을 임의로 해석/환산하지 않고
+ *  이미 있는 FREE_PATTERN 하나만 재사용한다(판정 기준을 두 곳에 따로
+ *  두지 않기 위함). */
+export function isFreeStatedCost(statedCost: string): boolean {
+  return FREE_PATTERN.test(statedCost.trim());
+}
+
 /** 이 stated_cost 문자열이 "합산 가능한 값"이면 숫자(원)를, 아니면
  *  null을 반환한다. null은 "이 항목은 합계에서 제외"를 뜻할 뿐, 원문
  *  표시(Cost Chip)에는 아무 영향이 없다. */

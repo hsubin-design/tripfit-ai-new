@@ -29,6 +29,12 @@
      gradient의 중간 stop에서만 쓰인다. */
   --color-primary-secondary: #7e72fa;
   --color-primary-soft: #eeefff;
+  /* 2026-09-04 — 초기화 확인 modal(ResetConfirmDialog)의 "취소하기"
+     전용. --color-primary-soft(연한 lavender)보다 채도를 더 낮춘
+     무채색에 가까운 톤 — 옆의 진한 purple "다시 시작하기"(primary)와
+     경쟁하지 않으면서도 텍스트는 여전히 purple이라 "선택 가능한
+     행동"임은 그대로 읽힌다. */
+  --color-neutral-tint-bg: #f0f0f4;
   /* 상세 비교/날짜별 구성 metadata chip 전용 배경. 시간과 비용은 서로
      다른 종류의 정보이므로 색상 체계를 구분한다 — 시간은 Primary
      Purple 계열, 비용은 앱에 이미 쓰이던 soft blue(핵심 요약 카드의
@@ -41,6 +47,17 @@
   --color-time-chip-bg: #dfe1ff;
   --color-cost-chip-bg: #eaf3ff;
   --color-cost-chip-text: #2f6fed;
+  /* 상세 일정 비용 chip 중 "무료"만 구분하는 전용 톤. category
+     chip(blue)·유료 비용 chip(purple)과 헷갈리지 않도록 세 번째 색
+     계열(mint/green)을 쓴다. 1차 우선순위 라운드 — 기존엔 이 배경에
+     --color-success(전역 neutral 상태 톤, #32805f)를 재사용했는데
+     "탁하다"는 피드백으로 이 chip 전용 텍스트 토큰을 새로 분리하고
+     더 맑고 채도 높은 mint/green으로 바꿨다(--color-success 자체는
+     다른 곳에서 안 쓰여 그대로 둔다 — 값을 바꾸면 이후 다른 곳에
+     쓰일 때 영향 범위가 넓어짐). "무료가 더 좋다"는 가치 판단이
+     아니라 유료/무료라는 사실 자체를 구분하는 용도일 뿐이다. */
+  --color-free-chip-bg: #e0f7ee;
+  --color-free-chip-text: #0e9d6d;
   /* 비교 기준 상세 / Plan A·B segmented control 전용 토큰 — 두 탭
      그룹이 동일한 component/style을 재사용하도록 여기서만 정의한다. */
   --color-segmented-bg: #f5f4f7;
@@ -98,6 +115,37 @@
   --color-disabled-bg: #eef0f3;
   --color-disabled-text: #a6abb3;
   --color-disabled-icon: #b6bbc2;
+
+  /* 2026-09-04 — 완료 화면 helpfulness 5-star 전용. 이전엔 미선택 별에
+     범용 --color-disabled-icon을, 선택 별에 --color-primary(purple)를
+     재사용했는데, "미선택 별이 너무 어둡다 / 별점 UI는 yellow·gold가
+     더 직관적" 피드백으로 이 위젯만의 전용 색을 새로 둔다(다른 곳의
+     disabled/primary 톤에는 영향 없음). 미선택은 기존보다 밝은 gray,
+     선택은 너무 orange 쪽으로 치우치지 않은 natural gold. */
+  --color-star-empty: #cdd1d7;
+  --color-star-filled: #f6c343;
+
+  /* 2026-09-04 — 로딩 화면(StepProcessing) yellow notice bar 전용.
+     Figma 기준으로 새로 추가한 유일한 색 계열 — "입력 내용은 보존된다"는
+     안심 안내를 다른 정보(purple 진행/보라 illustration)와 시각적으로
+     분리하기 위해 이 화면에만 쓴다. 아이콘은 조금 더 선명한 amber,
+     텍스트는 그보다 한 단계 muted한 톤을 써서 위계를 준다.
+     2026-09-04 재보정 — 이전 값(#fdf3d9/#d9860f/#8a5d0c)이 "탁하고
+     갈색 느낌"이라는 피드백으로, 배경은 더 맑은 warm yellow로, 아이콘은
+     더 선명한 amber/orange로, 텍스트는 대비가 더 또렷한 amber-brown으로
+     조정했다 — 채도를 과하게 올리지 않고(형광/네온 금지) 맑기만 더했다. */
+  --color-notice-bg: #fff6df;
+  --color-notice-icon: #f0a020;
+  --color-notice-text: #8a5a12;
+
+  /* 버그 수정(2026-09-04) — 결과 화면 "비교 범위 안내" 카드가 로딩
+     화면 notice와 미묘하게 다른 별도 톤(--color-scope-notice-*, 더
+     cream/brown)을 썼는데, "같은 semantic family(정보/제한사항 안내)인데
+     서로 다른 컴포넌트처럼 보인다"는 피드백으로 그 전용 토큰을
+     없애고 위 --color-notice-*(로딩 notice와 완전히 동일한 값)를
+     그대로 재사용하도록 통일했다. 본문 텍스트는 여전히
+     --color-text-secondary(neutral gray)를 쓴다 — amber는 아이콘/
+     제목에만 쓴다. */
 
   /* Radius */
   --radius-btn: 10px;
@@ -236,10 +284,75 @@ body {
     cursor: not-allowed;
   }
 
-  /* Outline toggle — 비교 결과 화면의 "도움이 되었나요?" 응답처럼, 다른
-     선택 버튼들(.chip/.rating-button/.tab-pill)과 달리 필채움 배경이
-     아니라 border/아이콘/텍스트 색(+ 선택 시 아주 옅은 tint 배경)으로
-     선택 상태를 표시하는 버튼. */
+  /* 2026-09-04 — 비교 실패 화면의 "입력으로 돌아가기" 전용 secondary
+     CTA(Figma 기준). .btn-secondary(무채색 gray)와 달리 옅은 purple
+     tint 배경 + purple 텍스트를 쓴다 — "다시 비교하기"(.btn-primary,
+     진한 purple)와 짝을 이루는 하나의 액션 쌍이라는 게 색으로도
+     드러나야 하기 때문. border는 쓰지 않는다(앱 전역 정책). */
+  .btn-secondary-tint {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 24px;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: var(--color-primary-soft);
+    color: var(--color-primary-hover);
+    font-size: 16px;
+    font-weight: 600;
+    transition: opacity 0.15s ease;
+  }
+  .btn-secondary-tint:hover {
+    opacity: 0.85;
+  }
+
+  /* 2026-09-04 — 초기화 확인 modal(ResetConfirmDialog)의 "취소하기"
+     전용 secondary CTA. .btn-secondary-tint와 구조는 같지만, 배경만
+     --color-primary-soft(연한 lavender) 대신 더 무채색에 가까운
+     --color-neutral-tint-bg를 써서 옆의 진한 purple "다시 시작하기"
+     (.btn-primary)와 시각적으로 경쟁하지 않게 했다 — 다른 화면(비교
+     실패 화면의 "입력으로 돌아가기" 등)이 쓰는 .btn-secondary-tint는
+     이 클래스와 분리돼 있어 전혀 영향받지 않는다. */
+  .btn-secondary-neutral {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 24px;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: var(--color-neutral-tint-bg);
+    color: var(--color-primary-hover);
+    font-size: 16px;
+    font-weight: 600;
+    transition: background-color 0.15s ease;
+  }
+  .btn-secondary-neutral:hover {
+    background: var(--color-border);
+  }
+
+  /* 2026-09-06 — 초기화 확인 modal(ResetConfirmDialog) 두 버튼을 다른
+     화면의 기본 CTA(.btn-primary/.btn-secondary-neutral, min-height
+     52px/font-size 16px)보다 한 단계 컴팩트하게 만드는 modifier.
+     .btn-primary는 앱 전역에서 공유하는 클래스라 그 자체를 줄이면
+     다른 화면(비교하기/다음 등)까지 함께 작아지므로, 이 modal에서만
+     추가로 붙이는 별도 클래스로 높이/글자크기만 덮어쓴다 — 좌우
+     padding(0 24px)·색상·radius·버튼 비율(flex-1)·gap은 원래 클래스
+     값을 그대로 물려받아 바뀌지 않는다. 48px는 390px 터치 기준
+     44px 권장 최소값보다 여유 있게 크다. */
+  .reset-confirm-btn {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  /* Outline toggle — 비교 결과 화면의 "도움이 되었나요?" 응답. 이전엔
+     미선택 상태에서도 2px 테두리가 항상 보여 "너무 강한 outline"으로
+     느껴진다는 피드백으로, 미선택 상태는 테두리 없이 연한 회색
+     배경(--color-subtle-surface)만 쓰고, 선택 상태만 옅은 semantic
+     tint 배경 + 아이콘/텍스트 색 변화로 표시한다 — border는 여전히
+     레이아웃 흔들림 방지용으로 투명하게 자리만 차지하고, 선택 시에도
+     1.5px(이전 2px보다 얇음)로만 살짝 드러난다. */
   .outline-toggle {
     display: inline-flex;
     align-items: center;
@@ -247,9 +360,9 @@ body {
     gap: 6px;
     min-height: 52px;
     padding: 0 16px;
-    border: 2px solid var(--color-border);
+    border: 1.5px solid transparent;
     border-radius: var(--radius-btn);
-    background: var(--color-surface);
+    background: var(--color-subtle-surface);
     color: var(--color-feedback-neutral-text);
     font-size: 15px;
     font-weight: 600;
@@ -386,41 +499,67 @@ body {
     color: var(--color-text-primary);
   }
 
-  .chip {
-    display: inline-flex;
+  /* v1.0 — "선택에 도움이 된 점"/"비교에 도움이 된 기준" 복수선택 목록.
+     이전엔 작은 pill/chip(가로로 wrap)이었는데, 카드형 결제 앱의
+     "한 줄짜리 선택 카드 + 왼쪽 체크 원" interaction 구조만
+     참고해서(색/브랜드 요소는 따르지 않음) 세로로 쌓이는 selectable
+     card로 바꿨다. 카드 자체는 옅은 톤만 써서 하단 primary CTA보다
+     강해 보이지 않게 한다. border는 미선택/선택 모두 완전히 쓰지
+     않는다(layout 유지를 위해 투명 1px만 남김) — 선택 상태 구분은
+     오직 배경 tint(neutral → 연보라)와 좌측 indicator 색(gray →
+     purple + white check) 두 가지만으로 표현한다. */
+  .reason-select-card {
+    display: flex;
+    width: 100%;
     align-items: center;
-    border-radius: var(--radius-pill);
+    gap: 12px;
+    border-radius: var(--radius-card);
+    border: 1px solid transparent;
     background: var(--color-subtle-surface);
-    color: var(--color-text-secondary);
+    padding: 14px 16px;
+    text-align: left;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .reason-select-card[data-selected="true"] {
+    background: var(--color-primary-soft);
+  }
+  .reason-select-card-label {
     font-size: 14px;
     font-weight: 500;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    line-height: 1.4;
+    color: var(--color-text-primary);
   }
-  .chip[data-selected="true"] {
-    background: var(--color-primary);
-    color: #ffffff;
-  }
-
-  /* Rating scale button (1–5). Same unselected/selected language as .chip. */
-  .rating-button {
+  .reason-select-card-indicator {
     display: flex;
-    height: 48px;
-    width: 48px;
+    height: 22px;
+    width: 22px;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-pill);
-    background: var(--color-subtle-surface);
-    color: var(--color-text-secondary);
-    font-size: 16px;
-    font-weight: 600;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    border: 1.5px solid var(--color-border);
+    background: var(--color-surface);
   }
-  .rating-button:hover {
-    color: var(--color-primary);
-  }
-  .rating-button[data-selected="true"] {
+  .reason-select-card[data-selected="true"] .reason-select-card-indicator {
+    border-color: var(--color-primary);
     background: var(--color-primary);
-    color: #ffffff;
+  }
+
+  /* 완료 화면의 5-star helpfulness(2026-09-04, Figma 기준) — 이전
+     숫자 원형 버튼(.rating-button, 이제 미사용이라 제거)을 대체한다.
+     Figma 재조정(같은 날) — 별 아이콘을 28px→36px로 키우면서 터치
+     영역도 44px→48px로 함께 넉넉히 키웠고, 바깥 flex gap도 8px(JSX
+     gap-2)로 넓혀 별 사이 간격이 이전보다 자연스럽게 벌어지게 했다. */
+  .star-rating-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+  }
+  .star-rating-btn:disabled {
+    opacity: 0.6;
   }
 
   .accordion {
@@ -441,6 +580,64 @@ body {
   }
   .accordion-panel {
     padding: 0 16px 12px;
+  }
+
+  /* v1.0 — "OO 원문 다시보기". 이전엔 긴 가로형 아코디언 트리거였는데,
+     Figma 레퍼런스가 플랜 헤더 옆의 짧은 언더라인 텍스트 버튼으로
+     지정해 되돌린다(클릭 시 modal로 원문이 열림 — 인라인 확장 아님). */
+  .original-link-btn {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    white-space: nowrap;
+  }
+
+  /* 버그 수정(2026-09-04) — "원문 다시보기" modal. 하단에서 올라오는
+     bottom sheet였는데, "원문을 잠깐 확인하는" 용도의 가벼운 overlay로
+     맞추기 위해 viewport 중앙에 뜨는 modal로 바꿨다. overlay 자체에
+     24px padding을 둬서 modal이 화면 어느 크기에서도 가장자리에 붙지
+     않고(390px 기준 좌우 여백 24px), max-width로 desktop에서 과도하게
+     넓어지지 않게 막는다. header/body를 분리해 header(제목+닫기)는
+     항상 고정되고 .modal-panel-body만(flex:1 + min-height:0 — flex
+     자식이 내용만큼 늘어나지 않고 부모 높이 안에서 스스로 스크롤되게
+     하는 표준 기법) 세로 스크롤된다 — 원문이 길어도 modal 전체가
+     viewport 밖으로 늘어나지 않는다. overlay는 여전히 fixed+inset:0
+     이라 배경 페이지 스크롤은 이전과 동일하게 막힌다. */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(20, 20, 24, 0.45);
+  }
+  .modal-panel {
+    display: flex;
+    width: 100%;
+    max-width: 400px;
+    max-height: 76vh;
+    flex-direction: column;
+    border-radius: var(--radius-container);
+    background: var(--color-surface);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+  }
+  .modal-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 20px 20px 12px;
+  }
+  .modal-panel-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 20px calc(20px + env(safe-area-inset-bottom));
   }
 
   /* Result screen 1차 tab (핵심 요약/상세 비교) — full-width underline nav,
@@ -527,6 +724,218 @@ body {
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   }
 
+  /* Input 화면의 "입력 방식"(붙여넣기/직접 일정 추가) 선택 — v1.0 UI
+     Refinement — Input 최종안. 바로 위 "여행 기간"이 이미 .tab-pill
+     segmented control을 쓰고 있어서, 입력 방식까지 같은 모양을 반복하면
+     "값 하나를 고르는 것"(기간)과 "입력 방식을 바꾸는 것"이 시각적으로
+     구분되지 않는다. 그래서 두 줄짜리(제목+짧은 설명) 카드 한 쌍으로
+     대신한다 — pill이 아니라 각자 독립된 카드라 옆에 나란히 있어도
+     서로 다른 선택지라는 게 더 분명히 보인다. */
+  .method-card-group {
+    display: flex;
+    gap: 8px;
+  }
+  .method-card {
+    flex: 1 1 0%;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 12px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    text-align: left;
+    transition: border-color 0.15s ease, border-width 0.15s ease, background-color 0.15s ease;
+  }
+  .method-card-label {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--color-text-primary);
+  }
+  .method-card-desc {
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.3;
+    color: var(--color-text-muted);
+  }
+  /* 선택 상태만 Primary Purple을 쓴다(색 정책: selected/focus/primary
+     CTA 중심) — border를 살짝 굵게 키우고 아주 옅은 tint 배경을 더해
+     pill의 filled selected 느낌과는 다르게, 여전히 "옅은 카드"로
+     남는다. 제목 텍스트는 옅은 배경 위 대비를 위해 --color-primary
+     보다 한 단계 어두운 --color-primary-hover를 쓴다. */
+  .method-card[data-active="true"] {
+    border-width: 1.5px;
+    border-color: var(--color-primary);
+    background: var(--color-primary-soft);
+  }
+  .method-card[data-active="true"] .method-card-label {
+    color: var(--color-primary-hover);
+    font-weight: 700;
+  }
+  .method-card[data-active="true"] .method-card-desc {
+    color: var(--color-primary);
+  }
+
+  /* 1차 우선순위 — "이미 정리된 일정이 있어요" 안의 텍스트/링크/파일
+     구분. 큰 카드 3개를 새로 만들지 않고, 위 .tab-pill-group과 같은
+     segmented 계열이되 한 일차 입력 영역 안에 들어가는 보조 컨트롤이라
+     더 작게(min-height 30px, 좁은 padding) 둔다. */
+  .input-subtab-group {
+    display: inline-flex;
+    width: 100%;
+    gap: 3px;
+    padding: 3px;
+    border-radius: var(--radius-btn);
+    background: var(--color-segmented-bg);
+  }
+  .input-subtab {
+    display: inline-flex;
+    flex: 1 1 0%;
+    min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 8px;
+    padding: 0 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--color-tab-inactive-text);
+    background: transparent;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .input-subtab[data-active="true"] {
+    background: #ffffff;
+    color: var(--color-primary);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  }
+
+  /* 1차 우선순위 — 파일 첨부 탭의 파일 선택 트리거. 실제 file input은
+     sr-only로 숨기고 이 label을 버튼처럼 쓴다. 점선 테두리로 "아직
+     내용을 채워 넣는 자리가 아니라 파일을 고르는 자리"라는 걸
+     .field(실선, 텍스트 입력용)와 구분한다. */
+  .file-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: var(--radius-input);
+    border: 1.5px dashed var(--color-border);
+    background: var(--color-subtle-surface);
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+  .file-picker-btn:hover {
+    border-color: var(--color-text-muted);
+  }
+
+  /* 버그 수정(2026-09-05) — 이미지 입력을 실제 비교 플로우에 연결하면서
+     추가한 최소 미리보기. 새 이미지 관리 UI를 만들지 않고, 선택한
+     이미지를 확인할 수 있는 작은 썸네일 하나만 둔다 — 기존 .field/
+     .file-picker-btn과 같은 radius/border 톤을 그대로 재사용한다. */
+  .image-preview-thumb {
+    display: block;
+    width: 100%;
+    max-height: 160px;
+    object-fit: contain;
+    border-radius: var(--radius-input);
+    border: 1px solid var(--color-border);
+    background: var(--color-subtle-surface);
+  }
+
+  /* item textarea 안쪽 우측의 "입력 내용 지우기" — item 자체를 지우는
+     게 아니라 텍스트만 비우는, 입력 중 자주 쓰는 동작이다. 어두운 회색
+     원형 배경 + 흰색 X로 필드 "안"에 속한 기능임을 보여준다 — 아래
+     .delete-item-btn(필드 "밖"의 rounded square '−')과는 색/모양 모두
+     다른 시각 언어라 두 기능이 헷갈리지 않는다. 값이 있을 때만
+     렌더링되므로(JSX 쪽 조건) 빈 상태에서는 아예 보이지 않는다. 바깥
+     버튼(36px)과 눈에 보이는 원(22px)을 분리해 시각적으로는 작아도
+     터치 영역은 충분히 확보하고, 필드 안에서 세로 가운데
+     (top:50%+translateY)로 정렬한다. */
+  .item-clear-btn {
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: none;
+  }
+  .item-clear-btn-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-pill);
+    background: var(--color-text-secondary);
+    color: #ffffff;
+    transition: background-color 0.15s ease;
+  }
+  .item-clear-btn:hover .item-clear-btn-circle,
+  .item-clear-btn:active .item-clear-btn-circle {
+    background: var(--color-text-primary);
+  }
+
+  /* 1차 우선순위 — "직접 일정 추가"에서 사용자가 "+ 일정 추가하기"로
+     만든 item을 통째로 없애는 버튼. Figma to-be 기준(2026-09-04)으로
+     필드 안 텍스트 지우기(dark circle + white X)와 같은 시각을 재사용하던
+     것을 그만두고 완전히 다른 모양으로 분리했다 — "두 기능을 같은
+     버튼처럼 보이게 하지 않기"라는 요청. rounded square + neutral gray
+     배경('−' 아이콘)이며 필드 "바깥"에 자리해, 텍스트만 비우는 가벼운
+     동작과 행 전체를 없애는 동작을 한눈에 구분할 수 있게 한다. 배경은
+     필드 배경(--color-subtle-surface)보다 한 톤 짙은 --color-border를
+     써서 옆의 입력칸과 시각적으로 분리된다. */
+  .delete-item-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: var(--radius-input);
+    background: var(--color-border);
+    color: var(--color-text-secondary);
+    transition: background-color 0.15s ease;
+  }
+  .delete-item-btn:hover,
+  .delete-item-btn:active {
+    background: var(--color-disabled-text);
+    color: var(--color-text-primary);
+  }
+
+  /* "직접 일정 추가"의 "일정 추가하기" — 각 일차 안의 보조(tertiary)
+     행동이라 filled button이 아니라 아이콘+텍스트 조합만 쓴다. neutral
+     gray로 둬서 위계상 입력 방식 선택(purple accent)보다도 낮고,
+     하단 primary CTA와는 전혀 경쟁하지 않는다. 시각적으로는 작아
+     보여도 padding으로 실제 터치 영역은 충분히 확보한다. */
+  .add-item-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 4px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    transition: color 0.15s ease;
+  }
+  .add-item-btn:hover {
+    color: var(--color-text-primary);
+  }
+
   /* Fixed bottom CTA bar, shared by every step screen with a forward CTA
      (입력/이유/평가/결과). Separated from scrolling content by its own
      opaque surface only — no border-top, no shadow, no divider line. */
@@ -549,15 +958,18 @@ body {
     background: var(--color-surface);
   }
 
-  /* 첫 화면 서비스 기대 조절 안내 카드 — 결과 화면 "TripFit AI가 정리한
-     핵심 요약" 카드와 같은 AI visual language(Purple → Blue)를 쓰되,
-     그 카드의 움직이는 gradient border/흰 배경은 결과 화면 전용
-     시그니처라 여기서는 쓰지 않는다. 이전에는 --color-primary-soft/
-     --color-cost-chip-bg 두 토큰을 그대로 썼더니 두 값의 밝기가 비슷해
-     거의 단색처럼 보였다 — 그래서 왼쪽(Lavender/Purple)과 오른쪽(Pale
-     Blue)의 채도·색상 차이가 육안으로 분명히 드러나도록 alpha가 있는
-     rgba 3-stop으로 다시 조정했다. border는 추가하지 않고, opacity는
-     박스 전체가 아니라 이 gradient의 alpha 값으로만 조절한다. */
+  /* 첫 화면 서비스 기대 조절 안내 — v1.0 UI Refinement — Input 최종안
+     (2026-09-03)에서 카드형 Purple→Blue gradient 배경을 제거하고 텍스트만
+     남겼다. "과도한 card/soft-purple surface 지양, purple은 selected/
+     focus/primary CTA 중심" 방향에 따라, 화면 진입 시 항상 보이는
+     보조 안내 문구까지 보라색 surface로 강조할 필요는 없다고 판단했다
+     — 배경/카드 껍데기 없이 텍스트만으로 톤을 낮춘다. */
+  /* 첫 화면 서비스 기대 조절 안내 카드 — 본문 텍스트에 자연스럽게
+     이어지지 않도록 옅은 Purple → Blue gradient 박스로 시각적으로
+     분리한다(v1.0 UI 정리 라운드에서 잠시 무배경 텍스트로 바뀌었다가,
+     "이전 버전처럼"이라는 요청으로 원복). border는 추가하지 않고,
+     opacity는 박스 전체가 아니라 이 gradient의 alpha 값으로만
+     조절한다. */
   .intro-notice-card {
     border-radius: var(--radius-card);
     background: linear-gradient(
@@ -569,12 +981,20 @@ body {
   }
 
   /* CTA 위에 잠시 떴다 사라지는 안내 토스트 — 텍스트 붙여넣기만 지원한다는
-     제약, URL 단독 붙여넣기 제한을 알릴 때 쓴다. 반투명 Black + 흰
-     텍스트로, 일시적으로 뜨는 시스템 알림이라는 느낌을 주면서도 상시
-     노출되는 CTA(진한 Primary Purple 채움)와는 다른 톤이라 서로
-     혼동되지 않는다. 표시/숨김은 wrapper의 opacity 0↔1 트랜지션으로만
-     하고, 텍스트 자체는 항상 완전한 흰색이라 읽는 동안 흐려지지 않는다. */
+     제약, URL 단독 붙여넣기 제한, 이미지 업로드/분석 오류를 알릴 때
+     쓴다. 반투명 Black + 흰 텍스트로, 일시적으로 뜨는 시스템 알림이라는
+     느낌을 주면서도 상시 노출되는 CTA(진한 Primary Purple 채움)와는
+     다른 톤이라 서로 혼동되지 않는다. 표시/숨김은 wrapper의 opacity
+     0↔1 트랜지션으로만 하고, 텍스트 자체는 항상 완전한 흰색이라 읽는
+     동안 흐려지지 않는다.
+     버그 수정(2026-09-05) — 왼쪽 warning icon(ToastWarningIcon)이
+     추가되면서 가운데 정렬 단일 텍스트 블록에서 아이콘+텍스트 좌측
+     정렬 가로 배치로 바꿨다 — radius/배경/border/shadow/font는 그대로
+     유지하고 배치만 바꾼 최소 수정이다. */
   .input-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     border-radius: var(--radius-btn);
     background: rgba(20, 20, 24, 0.82);
     backdrop-filter: blur(6px);
@@ -584,7 +1004,7 @@ body {
     font-size: 14px;
     font-weight: 600;
     padding: 12px 16px;
-    text-align: center;
+    text-align: left;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   }
   .input-toast-subtitle {
@@ -596,23 +1016,28 @@ body {
 
   /* "비교 범위 안내" — AI가 결과를 만들어낸 카드가 아니라 서비스 범위를
      알리는 보조 정보라서, AI 핵심 요약 카드의 Purple → Blue gradient는
-     쓰지 않는다(그 gradient는 AI 카드 전용 시그니처로 남겨둔다). 연한
-     Lavender/Purple 단일 톤 배경만 써서 "일반 Gray 보조 정보"보다는
-     눈에 띄되 "AI가 만든 결과"처럼 보이지 않게 한다. Red/Orange 등
-     경고색은 쓰지 않는다. */
+     쓰지 않는다(그 gradient는 AI 카드 전용 시그니처로 남겨둔다).
+     버그 수정(2026-09-04) — 로딩 화면 notice(.processing-notice-bar)와
+     "같은 semantic family인데 서로 다른 컴포넌트처럼 보인다"는
+     피드백으로, 전용 --color-scope-notice-* 토큰을 없애고
+     --color-notice-*(로딩 notice와 완전히 동일한 값)를 그대로
+     재사용하도록 통일했다. radius(8px)·padding(8px 12px)도
+     .processing-notice-bar와 동일하게 맞췄다 — 두 화면을 나란히 봐도
+     같은 컴포넌트 family로 읽히게 하기 위함. border는 쓰지 않는다
+     (기존과 동일). 문구/레이아웃은 그대로다. */
   .scope-notice {
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    border-radius: var(--radius-card);
-    background: var(--color-primary-soft);
-    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--color-notice-bg);
+    padding: 8px 12px;
   }
   .scope-notice-title {
     font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
-    color: var(--color-primary);
+    color: var(--color-notice-text);
   }
   .scope-notice-text {
     margin-top: 2px;
@@ -622,6 +1047,58 @@ body {
     color: var(--color-text-secondary);
   }
 
+  /* 버그 수정(2026-09-06) — 이미지 탭 "이미지 1장 = 한 일차" 안내를
+     일반 helper text(옅은 회색 한 줄)보다 한 단계 눈에 띄게 하되,
+     .scope-notice 계열의 노란(amber) --color-notice-* 톤은 warning처럼
+     읽혀 요구사항(빨강/노랑 금지)에 어긋나 쓰지 않는다. 대신 이미
+     .btn-secondary/.map-cta-btn 등에서 쓰는 --color-primary-soft(연한
+     lavender)를 그대로 재사용해 "새 색상"이 아닌 기존 보라 계열
+     팔레트 안에서만 톤을 고른다. radius/padding은 .scope-notice와
+     동일한 레시피(8px, 8px 12px)를 맞춰 "카드/notice 시스템과 맞출
+     것" 요구사항을 지킨다. */
+  .image-day-notice {
+    border-radius: 8px;
+    background: var(--color-primary-soft);
+    padding: 8px 12px;
+  }
+  .image-day-notice-title {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--color-text-primary);
+  }
+  .image-day-notice-text {
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+
+  /* 2차 우선순위 — "지도에서 N일차 동선 보기" CTA 전용 클래스.
+     .scope-notice(정적 안내 카드)와 시각을 분리해 "누를 수 있는
+     행동"으로 읽히게 한다 — 아이콘+텍스트를 가운데 정렬하고, 앱 전역
+     무-border 정책은 유지한 채 아주 옅은 그림자만으로 살짝 들어
+     보이게 해서 primary CTA(진한 보라 채움)보다는 확실히 약하지만
+     주변 정보 카드보다는 뚜렷한 "2차 CTA"로 자리잡게 한다. */
+  .map-cta-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 52px;
+    border-radius: var(--radius-card);
+    background: var(--color-primary-soft);
+    box-shadow: 0 1px 3px rgba(20, 20, 24, 0.06);
+    padding: 10px 16px;
+    transition: opacity 0.15s ease;
+  }
+  .map-cta-btn:hover,
+  .map-cta-btn:active {
+    opacity: 0.85;
+  }
+
   /* "TripFit AI가 정리한 핵심 요약" card — the one place in the app that
      uses a border, and deliberately so: a thin Purple → Indigo → Soft Blue
      gradient outline (via padding + inner surface, not a flat
@@ -629,69 +1106,217 @@ body {
      summary, while the interior stays plain white so the gradient never
      reads as a filled background. Glow stays a faint ambient shadow, never
      a strong drop shadow — the card must not visually outweigh the
-     Primary Purple CTA. */
-  .ai-card-border {
-    position: relative;
+     Primary Purple CTA.
+     v1.0 — 중간에 흰 배경 + 좌측 accent bar(border-left)로 단순화했던
+     적이 있는데, border-radius가 있는 카드에서 border-left만 쓰면 위/
+     아래 모서리에서 선이 어색하게 잘려 보이는 문제가 있었다. 다시 이
+     원래 gradient 테두리 방식으로 되돌린다 — 애니메이션은 넣지 않는다
+     (요청받은 건 "gradient line"이 살아있는 정적 스타일이지, 움직이는
+     효과가 아니다). .key-difference-card-frame이 gradient 배경 위에
+     padding만큼 안쪽 흰 카드(.key-difference-card)를 올려서 얇은
+     그라데이션 테두리처럼 보이게 한다 — border-radius 코너에서도
+     끊기지 않는다(순수 border-color/border-image로는 코너 처리가
+     지저분해짐). */
+  .key-difference-card-frame {
     border-radius: var(--radius-container);
     padding: 1.5px;
-    background: linear-gradient(120deg, #6a43e8, #7e72fa, #6ea8fe, #6a43e8);
-    background-size: 200% 200%;
-    box-shadow: 0 0 20px rgba(106, 67, 232, 0.08);
-    animation: ai-card-border-shift 10s ease-in-out infinite;
+    background: linear-gradient(135deg, #6a43e8 0%, #7e72fa 50%, #6ea8fe 100%);
+    box-shadow: 0 6px 20px rgba(106, 67, 232, 0.12);
   }
-  .ai-card-inner {
+  .key-difference-card {
     border-radius: calc(var(--radius-container) - 1.5px);
     background: var(--color-surface);
     padding: 20px;
   }
-  /* Slow, subtle drift across the gradient — not a spin, not a flash. */
-  @keyframes ai-card-border-shift {
-    0%,
-    100% {
-      background-position: 0% 50%;
-    }
-    50% {
-      background-position: 100% 50%;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ai-card-border {
-      animation: none;
-    }
+
+  /* v1.0 — 상세 일정 타임라인의 활동 순번 배지. neutral dot → rounded
+     square 배지로 바꿨다(Figma 레퍼런스). 숫자를 더 크게 키우면서
+     배지 자체도 20px → 24px로 키웠고, border/outline은 완전히 뺐다
+     (요청: "clean white rounded square + purple number"). 패널 배경
+     (--color-subtle-surface)과의 구분은 border가 아니라 아주 옅은
+     shadow 하나로만 준다 — 시각적으로 "테두리"로 읽히지 않을 정도로
+     흐리다. 정보 위계상 "일정 정보보다 보조적"이어야 하므로 카드형
+     배지처럼 크게 키우지는 않았다. */
+  .timeline-badge {
+    display: flex;
+    height: 24px;
+    width: 24px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    background: var(--color-surface);
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 1px 2px rgba(20, 20, 24, 0.08);
   }
 
-  /* 처리 화면 진행 표시 — 실제 진행률(%)을 알 수 없으므로 숫자 게이지
-     대신 "지금 몇 단계인지"만 점으로 보여준다(완료/현재/대기 3
-     상태). 실제로는 순수 경과 시간 기준 연출일 뿐이라, 정확한 %를
-     아는 것처럼 보이는 표현은 쓰지 않는다. */
-  .processing-step-dots {
+  /* v1.0 — 배지 아래로 이어지는 세로 rail. elbow connector
+     (.route-connector-elbow)와 반드시 같은 렌더링 방식(border-left,
+     같은 두께 1.5px·같은 색)을 써야 한다 — 하나는 배경색 채우기(div
+     background-color)로, 다른 하나는 border로 그리면 서브픽셀 단위로
+     미묘하게 어긋나 보여 "선이 따로 붙은 것처럼" 보이는 문제가
+     있었다. width:0 + border-left로 통일해 완전히 같은 축을
+     공유한다. */
+  .timeline-rail-line {
+    margin-top: 6px;
+    width: 0;
+    flex: 1 1 auto;
+    border-left: 1.5px solid var(--color-border);
+  }
+
+  /* 3차 우선순위(2026-09-04) — 상세 일정의 이동정보 connector. 이전엔
+     도보/차량 각각을 독립된 chip으로 세로로 쌓고 chip마다 자기 elbow를
+     가졌는데, "같은 구간에 속한 정보인데 서로 다른 chip처럼 보인다"는
+     피드백으로 "하나의 route 구간 = 하나의 흰 카드" 구조로 바꿨다.
+     이제 elbow는 그룹당 하나만 있고, 카드 안에서 이동수단별 행이
+     세로로 쌓인다 — connector도 "그룹 하나"에만 연결되므로 도보/차량이
+     한 이동 정보 묶음이라는 게 구조적으로도 분명해진다. */
+  .route-connector-group {
     display: flex;
+    align-items: stretch;
+    gap: 2px;
+    margin-top: 14px;
+  }
+  /* elbow는 rail 폭(28px, 가운데 24px 배지 → 세로선 x=14px) +
+     rail·content 사이 gap-3(12px) = 26px를 음수 margin-left로 당겨서
+     왼쪽 seam이 rail 세로선과 같은 x좌표에서 시작하게 한다
+     (TimelineItem의 rail 폭을 바꾸면 이 26px도 같이 바꿔야 함). 카드가
+     행 1개(짧음)든 2개 이상(김)이든 팔이 항상 카드 정중앙을 가리켜야
+     하므로, 이 wrapper 자체의 높이를 부모 flex의 stretch로 카드
+     높이에 맞춘 뒤, 안쪽 ::before를 height:50%로 둬서 "팔이 굽어지는
+     지점"이 항상 그 높이의 중간(=카드 세로 중앙)에 오게 한다 — 행
+     개수가 바뀌어도 고정 px 값을 다시 계산할 필요가 없다.
+     버그 수정(2026-09-04) — -26px였을 때 rail과 elbow 세로선 사이에
+     실제로 0.75px 어긋남이 있었다(DOM 측정으로 확인, 확대하면 seam이
+     끊겨 보이는 원인). .timeline-rail-line은 width:0 + border-left라
+     그 border 자체가 통째로 rect가 되어 시각적 중심이
+     rect.left+0.75에 있는데, 이 ::before는 width:100%(26px)인 박스
+     왼쪽 끝에 border-left를 그려서 시각적 중심이 rect.left+0.75인
+     건 같지만 rect.left 기준점 자체가 26.75px가 아니라 26px만큼만
+     당겨져 있어 두 중심이 0.75px 어긋났다. margin-left를 -26.75px로
+     0.75px 더 당겨 두 선의 실제 렌더링 중심(px 경계가 아니라 stroke
+     중심)이 같은 x좌표에 오도록 맞췼다. */
+  .route-connector-elbow {
+    position: relative;
+    width: 26px;
+    flex-shrink: 0;
+    margin-left: -26.75px;
+  }
+  .route-connector-elbow::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 50%;
+    border-left: 1.5px solid var(--color-border);
+    border-bottom: 1.5px solid var(--color-border);
+    border-bottom-left-radius: 6px;
+  }
+
+  /* 이동정보 group 카드 — border 없는 흰 배경 + rounded, inline이 아닌
+     block形 flex-col이지만 width를 지정하지 않아 가장 긴 행만큼만
+     hug-content로 늘어난다(full-width로 늘어나지 않음). radius는
+     .cost-chip-v1/.cost-chip-free와 같은 9px 체계를 맞췄다. */
+  .route-connector-card {
+    display: inline-flex;
+    flex-direction: column;
+    align-self: flex-start;
+    gap: 7px;
+    border-radius: 9px;
+    background: var(--color-surface);
+    padding: 6px 9px;
+  }
+  .route-connector-card-row {
+    display: inline-flex;
     align-items: center;
+    gap: 4px;
+    color: var(--color-primary-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* v1.0 — 처리 화면 진행 표시. 화면 최상단, content 너비를 그대로
+     쓰는 segmented bar로 바꿨다(이전엔 텍스트 아래 작은 점 4개였는데,
+     레퍼런스처럼 "제일 먼저 읽히는" 위치로 옮기면서 형태도 그 자리에
+     맞게 넓혔다). 실제 진행률(%)을 알 수 없으므로 숫자 게이지가
+     아니라 "지금 몇 단계인지"만 완료/현재/대기 3 상태 색으로
+     보여준다 — 정확한 %를 아는 것처럼 보이는 표현은 여전히 쓰지
+     않는다. */
+  .processing-progress-bar {
+    display: flex;
+    width: 100%;
     gap: 6px;
   }
-  .processing-step-dot {
-    width: 6px;
-    height: 6px;
+  .processing-progress-segment {
+    height: 4px;
+    flex: 1 1 0;
     border-radius: var(--radius-pill);
     background: var(--color-disabled-bg);
-    transition: background-color 0.3s ease, width 0.3s ease;
+    transition: background-color 0.3s ease;
   }
-  .processing-step-dot[data-state="done"] {
-    background: var(--color-primary-hover);
-  }
-  .processing-step-dot[data-state="current"] {
-    width: 18px;
+  .processing-progress-segment[data-state="done"],
+  .processing-progress-segment[data-state="current"] {
     background: var(--color-primary);
   }
 
-  /* 로딩 화면 단계별 visual 프레임 — 4단계(읽기/정리/비교/완료)마다
-     내용은 바뀌지만 이 틀(연한 Primary Purple 박스) 자체는 고정 크기라
-     레이아웃이 흔들리지 않는다("layout shift 최소화" 요구사항). */
+  /* 2026-09-04 — Figma 기준 yellow notice bar. 이전엔 그냥 무채색
+     caption 텍스트 한 줄이었는데, "입력한 내용은 보존된다"는 안심
+     메시지를 눈에 띄는 안내 바로 바꿨다. 실제 입력 보존 로직과는
+     연결되지 않은 순수 안내 UI다(로직 변경 없음). 아주 옅은 노란
+     배경 + filled 아이콘(다른 화면의 FilledInfoIcon과 같은 패턴:
+     채워진 원 + 흰 i, 색만 amber 계열) + muted amber 텍스트. border는
+     쓰지 않고(앱 전역 무-border 정책 유지) radius만 가볍게 준다.
+     390px에서 한 줄로 유지되도록 white-space:nowrap을 쓴다 — 문구
+     자체가 짧아 여유 있게 들어간다. */
+  .processing-notice-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--color-notice-bg);
+  }
+  .processing-notice-bar p {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-notice-text);
+    white-space: nowrap;
+  }
+
+  /* v1.0 — 문구가 바뀔 때(단계 전환, delayed fallback 등장) layout을
+     흔드는 움직임 없이 아주 짧은 opacity fade만 준다("과한 motion
+     불필요" 요구사항 — translateY 같은 위치 이동은 쓰지 않는다). */
+  .processing-text-enter {
+    animation: processing-text-fade-in 250ms ease-out both;
+  }
+  @keyframes processing-text-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* 로딩 화면 단계별 visual 프레임. 이전엔 작은 고정폭(max-width
+     280px) 박스였는데, "본문 content 너비를 충분히 쓰는 큰 visual"
+     요구사항으로 max-width를 없애고 width:100%만 남겼다 — 높이는
+     고정값 대신 원래 비율(280:136)을 그대로 유지하는 aspect-ratio를
+     써서, 화면 폭이 넓어져도 비율이 깨지거나 늘어나 보이지 않는다.
+     내부 stage visual(문서/칩/A·B 카드)도 커진 프레임에 맞춰 약
+     1.3배로 다시 그렸다(아래 각 stage 참고) — 큰 박스 안에 작은
+     아이콘만 떠 있는 모양을 피하기 위함. */
   .processing-visual-frame {
     position: relative;
     width: 100%;
-    max-width: 280px;
-    height: 136px;
+    aspect-ratio: 280 / 136;
     border-radius: var(--radius-container);
     background: var(--color-primary-soft);
     display: flex;
@@ -716,85 +1341,147 @@ body {
     }
   }
 
-  /* Stage 1 — 문서 2개를 훑어보는 느낌. scan line 하나가 두 문서 카드
-     사이를 천천히 오르내린다. */
-  .doc-pair {
+  /* 2026-09-04 재보정 — Stage 1의 문서 카드와 Stage 3의 A/B 카드가
+     "따로 만든 그림"처럼 보이지 않도록 두 곳 모두가 쓰는 공유 카드
+     베이스. radius/border/background/box-shadow/크기를 한 곳에서만
+     정의해 두 stage의 카드가 같은 디자인 시스템(같은 family)으로
+     보이게 한다 — 이전엔 doc-card(56×74, radius 8, border 1px, shadow
+     없음)와 ab-card(72×90, radius 12, border 1.5px, shadow 없음)가
+     서로 다른 크기/두께/모서리를 썼다.
+     2026-09-04 재재보정 — "크기는 같은데 내용(A/B 라벨+줄 vs 큰
+     글자 하나)이 달라 여전히 다른 카드처럼 보인다"는 피드백으로, 이제
+     Stage 1/3 모두 정확히 같은 마크업(.stage-card.doc-card 안에
+     .doc-card-label + .doc-line 3개)을 공유하는 StageCard 컴포넌트
+     하나만 쓴다(StepProcessing.tsx) — 두 stage의 차이는 이 카드를
+     감싸는 wrapper 안의 motion 요소(scan line vs moving dot)뿐이다.
+     .doc-pair/.ab-compare로 나뉘어 있던 wrapper도 .stage-card-pair
+     하나로 합쳐 gap(16px)까지 동일하게 통일했다(이전엔 16px/22px로
+     서로 달랐다). */
+  .stage-card {
+    width: 72px;
+    height: 90px;
+    border-radius: 12px;
+    background: var(--color-surface);
+    border: 1.5px solid var(--color-border);
+    box-shadow: 0 1px 3px rgba(32, 33, 36, 0.06);
+  }
+  .stage-card-pair {
     display: flex;
-    gap: 10px;
+    align-items: center;
+    gap: 16px;
     position: relative;
   }
+
+  /* Stage 1 — 문서 2개를 훑어보는 느낌. scan line 하나가 두 문서 카드
+     사이를 천천히 오르내린다. scan line의 sweep 구간은 카드 높이
+     (90px)에 맞춰 6→98px로 계산했다. */
   .doc-card {
-    width: 36px;
-    height: 48px;
-    border-radius: 6px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    padding: 6px 5px;
+    padding: 10px 8px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
+  }
+  .doc-card-label {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-text-secondary);
   }
   .doc-line {
-    height: 2px;
-    border-radius: 1px;
+    height: 2.5px;
+    border-radius: 1.5px;
     background: var(--color-disabled-bg);
   }
-  .doc-line:nth-child(1) {
+  .doc-line:nth-child(2) {
     width: 100%;
   }
-  .doc-line:nth-child(2) {
+  .doc-line:nth-child(3) {
     width: 80%;
   }
-  .doc-line:nth-child(3) {
+  .doc-line:nth-child(4) {
     width: 60%;
   }
+  /* 2026-09-04 재보정 — "네온처럼 크게 번지는 보라색 그림자"라는
+     피드백으로 box-shadow의 blur/spread를 확실히 줄였다(10/2·22/6 →
+     4/1·8/2, alpha도 낮춤) — 선 자체는 여전히 또렷한 3.5px core line
+     그대로 두고, 그 주변에만 아주 옅게 붙는 "얇은 스캔 광원"으로
+     바꿨다. 두께/애니메이션 속도·방향은 그대로 유지(요청 범위 밖). */
   .doc-scan-line {
     position: absolute;
-    left: -4px;
-    right: -4px;
-    height: 2px;
-    border-radius: 1px;
+    left: -6px;
+    right: -6px;
+    height: 3.5px;
+    border-radius: 2px;
     background: var(--color-primary);
-    opacity: 0.85;
+    box-shadow: 0 0 4px 1px rgba(106, 67, 232, 0.35), 0 0 8px 2px rgba(106, 67, 232, 0.15);
     animation: doc-scan-sweep 1.8s ease-in-out infinite;
   }
   @keyframes doc-scan-sweep {
     0%,
     100% {
-      top: 4px;
+      top: 6px;
     }
     50% {
-      top: 54px;
+      top: 98px;
     }
   }
 
-  /* Stage 2 — 시간/장소/비용 chip이 하나씩 순서대로 나타난다(진입 시
-     1회, 무한 반복 아님). */
+  /* Stage 2 — 시간/장소/비용 chip이 하나씩 순서대로 나타난 뒤(진입
+     1회), 진입 애니메이션이 끝난 뒤에도 계속되는 은은한 wave motion을
+     보여준다. 2026-09-04 재보정 — "텍스트만 움직이고 border/배경은
+     고정돼 보인다"는 피드백으로 wave/entrance의 역할을 반대로
+     바꿨다: 바깥 .wave-chip-wrapper(스타일 없는 순수 투명 wrapper)가
+     wave(translateY, 무한반복)를 맡고, 안쪽 .chip-pop(실제 눈에 보이는
+     pill — border/배경/padding/텍스트를 모두 가진 것 자체)이 진입
+     pop-in(1회성)을 맡는다 — 이제 wave가 움직일 때 border/배경/텍스트가
+     "하나의 pill 객체"로 함께 움직인다(이전엔 반대라 텍스트만 움직이고
+     border는 제자리에 있는 것처럼 보였다). 서로 다른 요소에 나눠
+     둬서 두 애니메이션이 같은 요소의 transform을 덮어쓰는 문제도
+     여전히 없다. 시간→장소→비용 순서로 wave는 0/0.22/0.44s, 진입은
+     기존 0/150/300ms 지연을 그대로 써 "하나씩 이어서 확인 중"이라는
+     순차적 느낌을 준다.
+     2026-09-04 재재보정 — "움직임 폭이 약해 순차성이 잘 안 보인다"는
+     피드백으로 구조(wrapper/chip 분리)는 그대로 두고 수치만
+     조정했다: translateY -7px→-10px, duration 1.7s→1.8s, delay
+     0/0.2/0.4s→0/0.22/0.44s. */
   .chip-stack {
     display: flex;
-    gap: 8px;
+    gap: 12px;
+  }
+  .wave-chip-wrapper {
+    display: inline-block;
+    animation: chip-wave 1.8s ease-in-out infinite;
   }
   .chip-pop {
     display: inline-flex;
     align-items: center;
-    height: 26px;
-    padding: 0 10px;
+    height: 40px;
+    padding: 0 16px;
     border-radius: var(--radius-pill);
     background: var(--color-surface);
     border: 1.5px solid var(--color-primary);
     color: var(--color-primary-hover);
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 600;
     white-space: nowrap;
     animation: chip-pop-in 380ms ease-out both;
   }
-  .chip-pop:nth-child(1) {
+  .wave-chip-wrapper:nth-child(1) {
+    animation-delay: 0s;
+  }
+  .wave-chip-wrapper:nth-child(1) .chip-pop {
     animation-delay: 0ms;
   }
-  .chip-pop:nth-child(2) {
+  .wave-chip-wrapper:nth-child(2) {
+    animation-delay: 0.22s;
+  }
+  .wave-chip-wrapper:nth-child(2) .chip-pop {
     animation-delay: 150ms;
   }
-  .chip-pop:nth-child(3) {
+  .wave-chip-wrapper:nth-child(3) {
+    animation-delay: 0.44s;
+  }
+  .wave-chip-wrapper:nth-child(3) .chip-pop {
     animation-delay: 300ms;
   }
   @keyframes chip-pop-in {
@@ -807,88 +1494,67 @@ body {
       transform: scale(1) translateY(0);
     }
   }
+  @keyframes chip-wave {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
 
   /* Stage 3 — 플랜 A/B 카드 사이를 작은 점이 은은하게 오간다(느린
-     ease-in-out, 튀지 않는 속도). */
-  .ab-compare {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    position: relative;
-  }
-  .ab-card {
-    width: 46px;
-    height: 58px;
-    border-radius: 8px;
-    background: var(--color-surface);
-    border: 1.5px solid var(--color-border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--color-text-secondary);
-  }
+     ease-in-out, 튀지 않는 속도). 카드 자체는 Stage 1과 완전히 같은
+     .stage-card-pair + .stage-card.doc-card 마크업을 그대로 재사용한다
+     (더 이상 이 stage만의 .ab-compare/.ab-card는 없다) — 여기 남은 건
+     두 카드 사이를 오가는 점(motion) 하나뿐이다.
+     2026-09-04 재보정 — "공이 크게 빛난다"는 피드백으로 box-shadow의
+     blur/spread/alpha를 확실히 낮췄다(8/2·20/6 → 3/1·6/2, alpha도
+     낮춤) — 점 자체(14px, 진한 purple)는 또렷하게 그대로 두고, 바깥
+     halo만 subtle한 gradient trail 정도로 줄였다. 애니메이션 속도/
+     이징/이동 구간(ab-scan-move)은 그대로 유지(요청 범위 밖). */
   .ab-scan-dot {
     position: absolute;
     top: 50%;
-    width: 8px;
-    height: 8px;
-    margin-top: -4px;
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
     border-radius: 50%;
     background: var(--color-primary);
+    box-shadow: 0 0 3px 1px rgba(106, 67, 232, 0.4), 0 0 6px 2px rgba(106, 67, 232, 0.16);
     animation: ab-scan-move 2.2s ease-in-out infinite;
   }
   @keyframes ab-scan-move {
     0%,
     100% {
-      left: 14px;
+      left: 22px;
     }
     50% {
-      left: calc(100% - 22px);
-    }
-  }
-
-  /* Stage 4 — 완료 체크. 등장 시 살짝 커지며 안착하는 1회성 효과만
-     쓴다. */
-  .result-check {
-    width: 56px;
-    height: 56px;
-    border-radius: var(--radius-pill);
-    background: var(--color-surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: result-check-settle 320ms ease-out both;
-  }
-  @keyframes result-check-settle {
-    from {
-      opacity: 0;
-      transform: scale(0.75);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
+      left: calc(100% - 36px);
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .processing-text-enter {
+      animation: none;
+    }
     .processing-stage-enter {
       animation: none;
     }
     .doc-scan-line {
       animation: none;
-      top: 29px;
+      top: 52px;
     }
     .chip-pop {
       animation: none;
     }
+    .wave-chip-wrapper {
+      animation: none;
+    }
     .ab-scan-dot {
       animation: none;
-      left: calc(50% - 4px);
-    }
-    .result-check {
-      animation: none;
+      left: calc(50% - 7px);
     }
   }
 
@@ -935,23 +1601,42 @@ body {
     white-space: nowrap;
   }
 
-  /* v1.0 — 결과 화면 시각 우선순위 재정비(장소명 > 비용 > 시간 > 활동/설명
-     > category > 이동정보)의 일부. 기존 .cost-chip(파란 톤, time-chip과
-     구분이 약함)은 그대로 두고 새 화면에서만 이 클래스를 쓴다 — 기존
-     .cost-chip을 쓰는 다른 화면(상세 비교 등, 아직 v1.0 레이아웃으로
-     안 옮긴 곳)에 영향을 주지 않기 위함. Time Chip보다 한 단계 강하게:
-     흰 배경 + Primary Purple 보더 + 진한 보라 SemiBold 텍스트로 border 자체가
-     "숫자"라는 신호를 주어 금액을 빠르게 scan할 수 있게 한다. */
+  /* v1.0 — 결과 화면 시각 우선순위(장소 > 시간/비용 > 이동정보 > 활동
+     > category)의 일부. 기존 .cost-chip(파란 톤, time-chip과 구분이
+     약함)은 그대로 두고 새 화면에서만 이 클래스를 쓴다. 이전에는 흰
+     배경 + 진한 보더(outline)였는데, "outline 느낌이 너무 강하다"는
+     피드백으로 soft filled tint(연한 Primary Soft 배경 + 진한 보라
+     텍스트, border 없음)로 바꿨다 — 여전히 filled badge처럼 무겁지
+     않으면서 장소 다음으로 잘 보이게 하는 목적은 유지한다. */
   .cost-chip-v1 {
     display: inline-flex;
     align-items: center;
-    border: 1.5px solid var(--color-primary);
+    gap: 4px;
+    border: none;
     border-radius: 9px;
-    background: var(--color-surface);
+    background: var(--color-primary-soft);
     color: var(--color-primary-hover);
     font-size: 13px;
     font-weight: 600;
-    padding: 4.5px 9px;
+    padding: 5px 9px;
+    white-space: nowrap;
+  }
+
+  /* v1.0 — 유료 비용(.cost-chip-v1, purple)과 구분되는 "무료" 전용
+     chip. height/radius/padding/font는 .cost-chip-v1과 완전히 같은
+     체계를 쓰고 색(배경/텍스트)만 mint/green으로 바꿨다 — category
+     chip(blue)과도 헷갈리지 않는 세 번째 색 계열. */
+  .cost-chip-free {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    border-radius: 9px;
+    background: var(--color-free-chip-bg);
+    color: var(--color-free-chip-text);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 9px;
     white-space: nowrap;
   }
 
@@ -978,19 +1663,22 @@ body {
     white-space: nowrap;
   }
 
-  /* v1.0 — 장소 category badge. 카테고리별로 색을 구분하지 않는다(요구
-     사항 변경) — neutral gray 하나로 통일해 "정보 중요도가 낮은 보조
-     정보"라는 것을 색으로도 드러낸다. Time/Cost chip보다 명확히 낮은
-     시각 무게(더 작은 폰트, 더 옅은 색)를 갖는다. */
+  /* v1.0 — 장소 category badge. 한 라운드 전에는 "정보 중요도가 낮은
+     보조 정보"라는 걸 드러내려고 neutral gray 텍스트로 낮췄었는데,
+     Figma 레퍼런스에서 이 자리가 뚜렷한 chip(pill 배경 + 색)으로
+     지정돼 있어 되돌린다. 카테고리별로 색을 구분하지는 않는다(교통/
+     관광지 모두 같은 톤) — 앱에 이미 있는 정보-metadata 톤인
+     --color-cost-chip-bg/text(연한 blue)를 재사용해 새 색을 만들지
+     않는다. */
   .category-badge {
     display: inline-flex;
     align-items: center;
-    border-radius: 6px;
-    background: var(--color-subtle-surface);
-    color: var(--color-text-muted);
+    border-radius: 8px;
+    background: var(--color-cost-chip-bg);
+    color: var(--color-cost-chip-text);
     font-size: 11px;
-    font-weight: 500;
-    padding: 2px 6px;
+    font-weight: 600;
+    padding: 3px 8px;
     white-space: nowrap;
   }
 
