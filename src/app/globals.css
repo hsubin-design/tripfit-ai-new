@@ -1047,25 +1047,25 @@ body {
     color: var(--color-text-secondary);
   }
 
-  /* 버그 수정(2026-09-06) — 이미지 탭 "이미지 1장 = 한 일차" 안내를
-     일반 helper text(옅은 회색 한 줄)보다 한 단계 눈에 띄게 하되,
-     .scope-notice 계열의 노란(amber) --color-notice-* 톤은 warning처럼
-     읽혀 요구사항(빨강/노랑 금지)에 어긋나 쓰지 않는다. 대신 이미
-     .btn-secondary/.map-cta-btn 등에서 쓰는 --color-primary-soft(연한
-     lavender)를 그대로 재사용해 "새 색상"이 아닌 기존 보라 계열
-     팔레트 안에서만 톤을 고른다. radius/padding은 .scope-notice와
-     동일한 레시피(8px, 8px 12px)를 맞춰 "카드/notice 시스템과 맞출
-     것" 요구사항을 지킨다. */
+  /* 버그 수정(2026-09-06, 2차) — 보라 계열(--color-primary-soft)이
+     "중요도가 약해 보인다"는 피드백으로, .scope-notice/.processing-notice-bar
+     가 쓰는 기존 amber notice 톤(--color-notice-bg/--color-notice-text)
+     으로 다시 바꿨다 — 이전 라운드의 "빨강/노랑 금지" 제약을 이번 요청이
+     명시적으로 대체한다. radius/padding/폰트 크기는 그대로 유지, 색상
+     토큰만 교체했다. 둘째 줄은 .scope-notice-text와 동일하게
+     --color-text-secondary(무채색)를 유지한다 — "기존 notice 스타일과
+     같은"이 곧 .scope-notice의 title(브라운 강조)/본문(무채색) 위계
+     구분 자체도 그대로 재사용하는 것으로 해석했다. */
   .image-day-notice {
     border-radius: 8px;
-    background: var(--color-primary-soft);
+    background: var(--color-notice-bg);
     padding: 8px 12px;
   }
   .image-day-notice-title {
     font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
-    color: var(--color-text-primary);
+    color: var(--color-notice-text);
   }
   .image-day-notice-text {
     margin-top: 2px;

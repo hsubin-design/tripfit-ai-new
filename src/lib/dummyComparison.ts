@@ -985,6 +985,21 @@ function hasSharedKey(keys: string[], index: Set<string>): boolean {
   return keys.some((k) => index.has(k));
 }
 
+// 버그 수정(2026-09-06) — "세이브존 -> 김포공항정류소"처럼 place
+// 문자열 전체가 이동 구간(A -> B)인 경우, 실제로는 "방문한 장소"가
+// 아니라 두 장소 사이의 이동 자체를 가리킨다. 이 값이 방문 장소
+// 집계(공통/고유 장소, 장소 수 insight)에 그대로 섞이면 실제 방문지
+// 수가 부풀어 보인다. place 문자열 자체에 "->"/"→"가 있는지만 보고
+// 판정한다(activity가 "이동"인지에는 의존하지 않는다 — 실측 데이터에서
+// 같은 route item도 activity가 null로 나오는 경우가 있었다). "디즈니씨
+// 이동"처럼 화살표 없이 실제 장소명 하나만 있는 경우는 이 판정에
+// 걸리지 않아 그대로 방문 장소로 유지된다. timeline item 자체(원본
+// place/activity/category, 원문 다시보기)는 이 판정과 무관하게 그대로
+// 보존된다 — 오직 장소 "집계" 단계에서만 걸러낸다.
+export function isRouteString(place: string): boolean {
+  return place.includes("->") || place.includes("→");
+}
+
 // 같은 플랜 안에서도 같은 장소가 "서울역"/"Seoul Station(서울역)"처럼
 // 서로 다른 표기로 여러 번 등장할 수 있다 — 그 경우 일정 item은 각각
 // 그대로 두고(항목 수도 그대로), 장소 "집합"을 만들 때만 canonical
@@ -995,7 +1010,7 @@ function collectCanonicalPlaces(plan: PlanStructure): CanonicalLabel[] {
   const result: CanonicalLabel[] = [];
   for (const day of plan.days) {
     for (const item of day.items) {
-      if (!item.place) continue;
+      if (!item.place || isRouteString(item.place)) continue;
       const label = item.place.trim();
       const keys = canonicalPlaceKeys(label, item.activity);
       if (hasSharedKey(keys, seenKeys)) continue;
@@ -1018,7 +1033,7 @@ function countMissing(plan: PlanStructure) {
   return missing;
 }
 
-function truncateList(list: string[], max = 3): string {
+export function truncateList(list: string[], max = 3): string {
   if (list.length <= max) return list.join(", ");
   return `${list.slice(0, max).join(", ")} 외 ${list.length - max}곳`;
 }
@@ -1039,7 +1054,7 @@ function dayLabelEntries(day: PlanDay | undefined): CanonicalLabel[] {
   const seenKeys = new Set<string>();
   const result: CanonicalLabel[] = [];
   for (const item of day.items) {
-    if (!item.place) continue;
+    if (!item.place || isRouteString(item.place)) continue;
     const label = item.place.trim();
     const keys = canonicalPlaceKeys(label, item.activity);
     if (hasSharedKey(keys, seenKeys)) continue;

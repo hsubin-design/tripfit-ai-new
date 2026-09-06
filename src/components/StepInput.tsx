@@ -798,15 +798,15 @@ function ImageInputPanel({
           <p className="whitespace-pre-line text-[12px] leading-[1.45] text-text-muted">
             {`이미지에서 일정 내용을 읽어 비교에 반영해요.\nJPG · PNG, 최대 ${MAX_IMAGE_SIZE_MB}MB`}
           </p>
-          {/* 버그 수정(2026-09-06, 2차) — "이미지 1장 = 한 일차" 정책 안내를
-              일반 helper text 한 줄로 뒀더니 눈에 잘 안 띈다는 피드백으로,
-              subtle info box로 바꿨다. warning/error로 읽히지 않도록
-              빨강/노랑 대신 기존 보라 계열의 옅은 --color-primary-soft
-              배경만 쓰고(새 색상 추가 없음), 위 기본 설명(순수 텍스트)과는
-              박스 유무로 위계를 구분한다. 문구 자체는 그대로, 두 문장을
-              제목(semibold)/본문(regular)으로만 나눴다 — multi-day
-              validation(아래 handleFileChange)이 실제로 막아주므로 이
-              박스는 사전 안내 역할만 한다. */}
+          {/* 버그 수정(2026-09-06, 3차) — "이미지 1장 = 한 일차" 정책 안내를
+              일반 helper text 한 줄로 뒀더니 눈에 잘 안 띈다는 피드백으로
+              subtle info box로 바꿨다(2차: 보라 계열 --color-primary-soft).
+              보라 톤이 다시 "중요도가 약해 보인다"는 피드백으로, 기존
+              .scope-notice 계열이 쓰는 amber notice 톤(--color-notice-bg/
+              --color-notice-text)으로 재변경했다(3차) — 색만 바뀌었을 뿐
+              박스 구조/문구/제목(semibold)·본문(regular) 위계는 그대로다.
+              multi-day validation(아래 handleFileChange)이 실제로
+              막아주므로 이 박스는 사전 안내 역할만 한다. */}
           <div className="image-day-notice">
             <p className="image-day-notice-title">한 이미지에는 한 일차의 일정을 올려주세요.</p>
             <p className="image-day-notice-text">여러 일차가 있다면 일차별로 나누어 올려주세요.</p>

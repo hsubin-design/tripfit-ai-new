@@ -4,6 +4,7 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import AppHeader from "@/components/AppHeader";
 import type { ComparisonResult, PlanDay, PlanItem, PlanStructure } from "@/types/plan";
 import { isFreeStatedCost, sumPlanCost, type CostSum } from "@/lib/costSummary";
+import { isRouteString, truncateList } from "@/lib/dummyComparison";
 import { startsWithOwnDayMarker } from "@/lib/planDayText";
 import { explicitTimeToMinutes, formatExplicitTime, sortItemsByExplicitTime } from "@/lib/timeSort";
 import {
@@ -128,6 +129,20 @@ export default function StepResult({
           </div>
         </section>
 
+        {/* 1-1. 공통 장소 — 버그 수정(2026-09-06). comparison.common_places는
+            dummyComparison.ts의 buildComparison()이 기존 canonical place
+            dedup(collectCanonicalPlaces)로 이미 계산해 내려주던 값인데
+            지금까지 화면에서 읽지 않았다. "차이"가 아니라 "공통점"이라
+            key_differences(최대 4개 슬롯)와는 의미가 달라 그 배열에
+            넣지 않고 별도 섹션으로 둔다 — 슬롯 경합도 없어 차이가
+            몇 개든 공통 장소는 있으면 항상 보인다. 0곳이면 섹션 자체를
+            렌더링하지 않는다. */}
+        {result.comparison.common_places.length > 0 && (
+          <section className="mt-4">
+            <CommonPlacesNotice places={result.comparison.common_places} />
+          </section>
+        )}
+
         {/* 2. 일차별 A/B 상세 비교 */}
         <section className="mt-8 flex flex-col gap-4">
           <h2 className="heading-card">일차별 A/B 상세 비교</h2>
@@ -225,6 +240,25 @@ function ComparisonScopeNotice() {
         <p className="scope-notice-text">
           입력된 일정만을 기준으로 비교하며, 지도 기반 거리·교통시간은 계산하지 않습니다.
         </p>
+      </div>
+    </div>
+  );
+}
+
+/** 두 플랜에 공통으로 포함된 장소 안내. ComparisonScopeNotice와 같은
+ *  .scope-notice 톤을 그대로 재사용한다 — 새 색상/새 카드 스타일을
+ *  만들지 않는다. places는 이미 buildComparison()에서 canonical
+ *  dedup·이동 경로 문자열 제외까지 끝난 값을 그대로 받으므로 여기서는
+ *  표시만 담당한다(장소 판단 로직 없음). truncateList는 day별 장소
+ *  구성 insight와 같은 "외 N곳" 포맷을 그대로 재사용한다. */
+function CommonPlacesNotice({ places }: { places: string[] }) {
+  const list = truncateList(places, 5).replaceAll(", ", " · ");
+  return (
+    <div className="scope-notice">
+      <FilledInfoIcon size={16} className="mt-0.5 shrink-0 text-[var(--color-notice-icon)]" />
+      <div>
+        <p className="scope-notice-title">두 일정에 공통으로 포함된 장소가 있어요.</p>
+        <p className="scope-notice-text">{list}</p>
       </div>
     </div>
   );
@@ -594,7 +628,9 @@ function timeRangeSummary(items: PlanItem[]): string | null {
  *  장소 개수·day별 장소 비교도 이 함수가 아니라 원본 items를 직접
  *  세므로 영향이 없다. */
 function placeSummary(items: PlanItem[]): string {
-  const places = items.map((i) => i.place).filter((p): p is string => p !== null);
+  const places = items
+    .map((i) => i.place)
+    .filter((p): p is string => p !== null && !isRouteString(p));
   if (places.length === 0) return "장소 정보 없음";
   return [...new Set(places)].join(" · ");
 }
@@ -782,6 +818,17 @@ function hasNumericAmount(statedCost: string): boolean {
   return /\d/.test(statedCost);
 }
 
+// 버그 수정(2026-09-06, 2차) — 국내 Excel 이미지 QA에서 stated_cost가
+// 순수 "0"(통화 단위 없음)으로 들어오는 케이스가 확인됐다. "0"도
+// digit이라 hasNumericAmount만으로는 유료 chip으로 노출돼, 사용자가
+// 실제 지불 금액(0원)처럼 오해할 수 있다. isFreeStatedCost는 정확히
+// "무료"/"0원" 문자열만 인정하므로 bare "0"은 그 분기를 안 타 그대로
+// 유료 chip으로 샜었다 — stated_cost 원본이나 비용 합계 로직은
+// 손대지 않고, "표시 여부" 판단에 이 조건 하나만 추가한다.
+function isPureZero(statedCost: string): boolean {
+  return /^0+$/.test(statedCost.trim());
+}
+
 function ScheduleItem({ item }: { item: PlanItem }) {
   const hasPlace = item.place !== null;
   const category = item.category;
@@ -843,7 +890,7 @@ function ScheduleItem({ item }: { item: PlanItem }) {
             {item.stated_cost}
           </span>
         ) : (
-          hasNumericAmount(item.stated_cost) && (
+          hasNumericAmount(item.stated_cost) && !isPureZero(item.stated_cost) && (
             <span className="cost-chip-v1 mt-2 self-start">
               <CostIcon />
               {item.stated_cost}
