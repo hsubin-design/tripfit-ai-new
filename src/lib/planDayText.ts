@@ -23,16 +23,42 @@
 // 않음) — "차" 바로 뒤에서 매칭이 실패해 마커 자체를 못 찾는 문제가
 // 있었다. "일차"/"DAY N"은 이미 그 자체로 충분히 구체적인 패턴이라
 // \b 없이도 오탐 위험이 없다.
-const DAY_MARKER_START_PATTERN = /^(?:\d+\s*일\s*차|DAY\s*\d+)/i;
+//
+// 버그 수정(2026-09-06) — UT 직전 QA에서 발견된 phantom day 버그.
+// 이 패턴이 숫자+일차/DAY N만 인식하는 반면, structure-plan
+// route.ts(SYSTEM_PROMPT 규칙 7·DAY_BOUNDARY_LINE_PATTERN)는 "첫째
+// 날"/"다음 날"/"마지막 날" 같은 서술형 표현도 day 경계로 인정한다.
+// 그 결과 사용자가 일차 박스 첫 줄에 "첫째 날"처럼 서술형 마커를
+// 적으면, 이 함수가 "자기 마커가 없다"고 오판해 앞에 "1일차\n"를
+// 또 붙였고, 서버는 그 자동 헤더와 사용자의 서술형 마커를 각각
+// 별개의 day 경계로 인식해 빈 phantom day가 하나씩 끼어들었다(예:
+// 1박2일인데 결과가 4일차까지 생성). route.ts의 프롬프트/정규식
+// 목록을 그대로 옮겨와 두 쪽이 인정하는 day 경계 표현을 다시
+// 일치시킨다 — 서버 규칙 자체는 건드리지 않는다.
+const DAY_MARKER_START_PATTERN =
+  /^(?:\d+\s*일\s*차|DAY\s*\d+|첫째\s*날|첫날|둘째\s*날|셋째\s*날|넷째\s*날|다섯째\s*날|여섯째\s*날|다음\s*날|다음날|마지막\s*날)/i;
 
 // 버그 수정(2026-09-05) — StepResult.tsx의 "원문 다시보기" modal이
 // day별로 렌더링하면서(이미지 입력 지원), joinDayTexts가 "이 day에
 // 자동 헤더를 붙일지" 판단할 때 쓰는 것과 완전히 같은 규칙으로 "이
 // day 텍스트에 이미 사용자 자신의 헤더가 있는지"를 판단해야 두 곳의
 // 판정이 어긋나지 않는다 — 그래서 export해서 재사용한다.
+//
+// 버그 수정(2026-09-06, 2차) — 이미지 OCR처럼 "부산여행\nDAY 1\n..."
+// 처럼 제목 줄이 마커보다 앞에 오는 입력에서, 첫 줄("부산여행")만
+// 검사하다 보니 "마커 없음"으로 오판해 자동 헤더가 또 붙고, 서버가
+// 그 자동 헤더와 원문 안의 "DAY 1"을 각각 별개 day 경계로 인식해
+// phantom day가 생겼다. 첫 줄만 보지 않고 텍스트 전체 줄을 훑어
+// 마커로 시작하는 줄이 하나라도 있으면(어느 위치든) "이미 자기
+// 마커가 있다"고 판단한다 — 마커가 어디 있든 서버가 그 줄에서
+// day 경계로 넘어갈 것이므로, 앞에 자동 헤더를 얹으면 항상 중복이다.
+// "부산여행" 같은 제목 줄 자체는 이 정규식이 애초에 매칭하지 않으므로
+// (숫자+일차/DAY N/서술형 날짜 표현 외에는 매칭 안 함) 제목을 마커로
+// 오인할 위험은 없다.
 export function startsWithOwnDayMarker(text: string): boolean {
-  const firstLine = text.split("\n")[0]?.trim() ?? "";
-  return DAY_MARKER_START_PATTERN.test(firstLine);
+  return text
+    .split("\n")
+    .some((line) => DAY_MARKER_START_PATTERN.test(line.trim()));
 }
 
 export function joinDayTexts(dayTexts: string[]): string {

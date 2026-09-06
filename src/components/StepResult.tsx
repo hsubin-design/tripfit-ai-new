@@ -500,10 +500,24 @@ function PlanDayBlock({
             뜻하는 표현은 쓰지 않는다(이전 라운드에서 확정된 가드레일).
             뜻은 동일(합산 가능한 항목만 더한 값)하고 라벨만 더 짧고
             균형 있게 다듬었다. 합산 가능한 항목이 하나도 없으면 0원으로
-            지어내지 않고 "없음"을 그대로 값 자리에 보여준다. */}
+            지어내지 않고 "없음"을 그대로 값 자리에 보여준다.
+            버그 수정(2026-09-06) — "비용 정보 자체가 없음"과 "비용은
+            입력됐지만(예: 단위 없는 숫자, 외화) 합산 기준을 만족하지
+            못해 제외됨"을 같은 "입력 비용 합계 없음" 문구로 뭉뚱그려
+            보여주던 걸 나눴다. sumPlanCost/costSummary.ts의 합산
+            로직(PURE_WON_PATTERN 등)은 그대로 두고, 이미 계산돼 있던
+            CostSum.excludedCount(값은 있었지만 합산 규칙에 안 맞아
+            제외된 항목 수)만 새로 읽어 분기한다 — 통화 추론이나 새
+            계산 없이 기존 값 소비처만 늘린 것이라 회귀 위험이 낮다. */}
         <SummaryRow
           label="비용 합계"
-          value={costSum.total !== null ? formatWon(costSum.total) : "입력 비용 합계 없음"}
+          value={
+            costSum.total !== null
+              ? formatWon(costSum.total)
+              : costSum.excludedCount > 0
+                ? "합산 가능한 비용 없음"
+                : "입력 비용 합계 없음"
+          }
         />
 
         {/* 이동 정보 — 실제 Kakao Mobility 등 연동 전까지는 dev mock만

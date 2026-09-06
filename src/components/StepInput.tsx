@@ -354,11 +354,16 @@ function InputExampleToggle() {
  *  도형" 패턴을 그대로 재사용하되, 그 두 아이콘은 세로 막대가 아래쪽에
  *  있는 "i" 모양(정보 안내용)인 반면 이 아이콘은 막대가 위쪽에 있는
  *  "!" 모양(경고용)이다 — 같은 두 도형(막대+점)의 위치만 바꾼 것이라
- *  새 아이콘 시스템을 만들지 않고 기존 패턴을 그대로 따른다. 색은 그
- *  두 아이콘과 동일한 --color-notice-icon(amber)을 쓴다 — 빨간
- *  --color-error는 쓰지 않는다(요청). 이 파일에도 같은 패턴을
- *  복제하는 이유는 NoticeInfoIcon 자체의 주석에 있는 것과 같다
- *  ("구조 변경 최소화 원칙상 새로 import 배선을 만들지 않음").
+ *  새 아이콘 시스템을 만들지 않고 기존 패턴을 그대로 따른다. 색은
+ *  --color-toast-warning-icon(amber)을 쓴다 — 빨간 --color-error는
+ *  쓰지 않는다(요청). 이 파일에도 같은 패턴을 복제하는 이유는
+ *  NoticeInfoIcon 자체의 주석에 있는 것과 같다("구조 변경 최소화
+ *  원칙상 새로 import 배선을 만들지 않음").
+ *
+ *  버그 수정(2026-09-06, 2차) — informational notice 아이콘(--color-notice-icon)만
+ *  더 옅게 바꾸면서 이 "!" 아이콘까지 같이 옅어지면 warning 의미가
+ *  약해진다 — 그래서 --color-toast-warning-icon을 따로 분리해 이
+ *  아이콘 전용으로 옛 값(#f0a020)을 그대로 유지한다.
  *
  *  버그 수정(2026-09-06) — 20px 크기에서 흰색 오버레이 막대/점의 대비가
  *  약하다는 피드백으로, "!" 를 흰 도형을 얹는 방식이 아니라 mask로
@@ -378,7 +383,33 @@ function ToastWarningIcon() {
         <rect x="11" y="6.5" width="2" height="7.1" rx="1" fill="#000000" />
         <circle cx="12" cy="16.9" r="1.3" fill="#000000" />
       </mask>
-      <circle cx="12" cy="12" r="10" fill="var(--color-notice-icon)" mask={`url(#${maskId})`} />
+      <circle cx="12" cy="12" r="10" fill="var(--color-toast-warning-icon)" mask={`url(#${maskId})`} />
+    </svg>
+  );
+}
+
+/** 이미지 입력 안내(.scope-notice) 첫 문장 앞의 filled info icon.
+ *  StepProcessing.tsx의 NoticeInfoIcon/StepResult.tsx의 FilledInfoIcon과
+ *  같은 모양(채워진 원 + 흰 i)이지만, 그 컴포넌트들을 import하지 않고
+ *  로컬로 하나 더 둔다 — 이유는 NoticeInfoIcon 자체의 주석과 같다
+ *  ("구조 변경 최소화 원칙상 새로 import 배선을 만들지 않음"). .scope-notice는
+ *  align-items:flex-start라 ComparisonScopeNotice의 FilledInfoIcon과
+ *  동일하게 mt-0.5로 첫 줄 텍스트와 눈높이를 맞춘다(이 컴포넌트가
+ *  단일 용도라 className을 prop으로 받지 않고 고정한다 — ToastWarningIcon과
+ *  동일한 패턴). */
+function NoticeInfoIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="mt-0.5 shrink-0"
+      style={{ color: "var(--color-notice-icon)" }}
+    >
+      <circle cx="12" cy="12" r="10" fill="currentColor" />
+      <rect x="11" y="10.4" width="2" height="7.1" rx="1" fill="#ffffff" />
+      <circle cx="12" cy="7.1" r="1.3" fill="#ffffff" />
     </svg>
   );
 }
@@ -728,6 +759,15 @@ function ImageInputPanel({
       // 줄로 분리해두므로(rawText는 원본 그대로라 마커가 문장 중간에
       // 섞여 있을 수 있어 줄 단위 판정이 불안정하다) 이 값이 더
       // 안정적으로 감지된다.
+      //
+      // 버그 수정(2026-09-06, 2차) — 실제 Notion/브라우저 캡처처럼
+      // 화면 주변에 다른 날짜가 우연히 같이 찍힌 이미지에서도 이
+      // 차단이 정상적으로 발동하는데("여러 일차의 일정이 확인됐어요"),
+      // 문구가 "일차"라는 내부 용어를 그대로 써서 사용자가 왜
+      // 막혔는지 바로 이해하기 어렵다는 피드백으로 "여러 날짜가
+      // 확인됐어요 / 한 일차의 일정만 보이도록 잘라서 다시 올려주세요"로
+      // 문구만 바꿨다 — 감지 로직(countDayHeaderLines, overDuration
+      // 분기)과 상태 보존(revertToPreviousState)은 그대로다.
       const detectedDays = countDayHeaderLines(itineraryText);
       if (detectedDays >= 2) {
         const overDuration = detectedDays > duration;
@@ -738,8 +778,8 @@ function ImageInputPanel({
                 subtitle: "일차별로 나누어 올리거나 여행 기간을 확인해주세요.",
               }
             : {
-                title: "이미지에서 여러 일차의 일정이 확인됐어요.",
-                subtitle: "일차별로 나누어 올려주세요.",
+                title: "이미지에서 여러 날짜가 확인됐어요.",
+                subtitle: "한 일차의 일정만 보이도록 잘라서 다시 올려주세요.",
               }
         );
         revertToPreviousState();
@@ -809,8 +849,17 @@ function ImageInputPanel({
               (새 .image-day-notice* class 없음, globals.css에서도 제거).
               ComparisonScopeNotice와 동일한 마크업이되 아이콘만 없는
               형태(요청사항) — 아이콘이 없어도 .scope-notice는 flex
-              child가 하나뿐인 상태로 동일하게 동작한다. */}
+              child가 하나뿐인 상태로 동일하게 동작한다.
+
+              버그 수정(2026-09-06, 5차) — "아이콘이 없어서 다른 informational
+              notice와 구조가 다르다"는 피드백으로 첫 문장 앞에만 아이콘을
+              추가한다(둘째 문장에는 없음, 요청사항). ComparisonScopeNotice가
+              쓰는 FilledInfoIcon과 같은 모양이지만 이 파일은 그 컴포넌트를
+              StepResult.tsx에서 import하지 않고 로컬로 하나 더 둔다 —
+              NoticeInfoIcon(StepProcessing.tsx)과 동일한 이유("구조 변경
+              최소화 원칙상 새로 import 배선을 만들지 않음")다. */}
           <div className="scope-notice">
+            <NoticeInfoIcon />
             <div>
               <p className="scope-notice-title">한 이미지에는 한 일차의 일정을 올려주세요.</p>
               <p className="scope-notice-text">여러 일차가 있다면 일차별로 나누어 올려주세요.</p>
