@@ -125,23 +125,12 @@ export default function StepResult({
         <section className="mt-8">
           <h2 className="heading-card">AI가 요약한 핵심 차이</h2>
           <div className="mt-3">
-            <KeyDifferenceCard items={result.comparison.key_differences} />
+            <KeyDifferenceCard
+              items={result.comparison.key_differences}
+              commonPlaces={result.comparison.common_places}
+            />
           </div>
         </section>
-
-        {/* 1-1. 공통 장소 — 버그 수정(2026-09-06). comparison.common_places는
-            dummyComparison.ts의 buildComparison()이 기존 canonical place
-            dedup(collectCanonicalPlaces)로 이미 계산해 내려주던 값인데
-            지금까지 화면에서 읽지 않았다. "차이"가 아니라 "공통점"이라
-            key_differences(최대 4개 슬롯)와는 의미가 달라 그 배열에
-            넣지 않고 별도 섹션으로 둔다 — 슬롯 경합도 없어 차이가
-            몇 개든 공통 장소는 있으면 항상 보인다. 0곳이면 섹션 자체를
-            렌더링하지 않는다. */}
-        {result.comparison.common_places.length > 0 && (
-          <section className="mt-4">
-            <CommonPlacesNotice places={result.comparison.common_places} />
-          </section>
-        )}
 
         {/* 2. 일차별 A/B 상세 비교 */}
         <section className="mt-8 flex flex-col gap-4">
@@ -245,25 +234,6 @@ function ComparisonScopeNotice() {
   );
 }
 
-/** 두 플랜에 공통으로 포함된 장소 안내. ComparisonScopeNotice와 같은
- *  .scope-notice 톤을 그대로 재사용한다 — 새 색상/새 카드 스타일을
- *  만들지 않는다. places는 이미 buildComparison()에서 canonical
- *  dedup·이동 경로 문자열 제외까지 끝난 값을 그대로 받으므로 여기서는
- *  표시만 담당한다(장소 판단 로직 없음). truncateList는 day별 장소
- *  구성 insight와 같은 "외 N곳" 포맷을 그대로 재사용한다. */
-function CommonPlacesNotice({ places }: { places: string[] }) {
-  const list = truncateList(places, 5).replaceAll(", ", " · ");
-  return (
-    <div className="scope-notice">
-      <FilledInfoIcon size={16} className="mt-0.5 shrink-0 text-[var(--color-notice-icon)]" />
-      <div>
-        <p className="scope-notice-title">두 일정에 공통으로 포함된 장소가 있어요.</p>
-        <p className="scope-notice-text">{list}</p>
-      </div>
-    </div>
-  );
-}
-
 /** "AI가 요약한 핵심 차이" 카드. items는 dummyComparison.ts
  *  buildComparison() 한 곳에서만 생성된 값(시간/비용/장소 축, 최대
  *  4개)이다 — 여기서 새로 문장을 만들거나 계산하지 않는다. title/detail이
@@ -280,11 +250,20 @@ function CommonPlacesNotice({ places }: { places: string[] }) {
  *
  *  v1.0 — "어떤 일정이 더 잘 맞나요?" 조건부 추천 문구(hint)는 결과
  *  화면이 승자를 판단하는 것처럼 보인다는 이유로 완전히 제거했다 —
- *  이 카드는 이제 순수하게 "확인된 차이"만 나열한다. */
+ *  이 카드는 이제 순수하게 "확인된 차이"만 나열한다.
+ *
+ *  v1.0 — 공통 장소(commonPlaces)는 "차이"가 아니지만, 별도 notice
+ *  박스보다 이 카드 안의 마지막 항목으로 함께 보여달라는 요청(2026-09-06)에
+ *  따라 items와 동일한 check/title/detail 구조로 이어서 렌더링한다.
+ *  commonPlaces는 buildComparison()이 이미 canonical dedup·이동 경로
+ *  문자열 제외까지 끝내 내려주는 값이라 여기서는 표시만 담당하고,
+ *  items(최대 4개 슬롯)의 개수 정책과는 무관하게 항상 별도로 붙는다. */
 function KeyDifferenceCard({
   items,
+  commonPlaces,
 }: {
   items: { text: string; title?: string; detail?: string }[];
+  commonPlaces: string[];
 }) {
   return (
     <div className="key-difference-card-frame">
@@ -318,6 +297,19 @@ function KeyDifferenceCard({
               )}
             </li>
           ))}
+          {commonPlaces.length > 0 && (
+            <li className="flex gap-2.5">
+              <CheckIcon />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[15px] font-semibold leading-[1.4] text-text-primary">
+                  두 일정에 공통으로 포함된 장소가 있어요.
+                </span>
+                <span className="text-[13px] leading-[1.4] text-text-secondary">
+                  {truncateList(commonPlaces, 5).replaceAll(", ", " · ")}
+                </span>
+              </div>
+            </li>
+          )}
         </ul>
       </div>
     </div>

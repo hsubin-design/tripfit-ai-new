@@ -798,18 +798,23 @@ function ImageInputPanel({
           <p className="whitespace-pre-line text-[12px] leading-[1.45] text-text-muted">
             {`이미지에서 일정 내용을 읽어 비교에 반영해요.\nJPG · PNG, 최대 ${MAX_IMAGE_SIZE_MB}MB`}
           </p>
-          {/* 버그 수정(2026-09-06, 3차) — "이미지 1장 = 한 일차" 정책 안내를
+          {/* 버그 수정(2026-09-06, 4차) — "이미지 1장 = 한 일차" 정책 안내를
               일반 helper text 한 줄로 뒀더니 눈에 잘 안 띈다는 피드백으로
-              subtle info box로 바꿨다(2차: 보라 계열 --color-primary-soft).
-              보라 톤이 다시 "중요도가 약해 보인다"는 피드백으로, 기존
-              .scope-notice 계열이 쓰는 amber notice 톤(--color-notice-bg/
-              --color-notice-text)으로 재변경했다(3차) — 색만 바뀌었을 뿐
-              박스 구조/문구/제목(semibold)·본문(regular) 위계는 그대로다.
-              multi-day validation(아래 handleFileChange)이 실제로
-              막아주므로 이 박스는 사전 안내 역할만 한다. */}
-          <div className="image-day-notice">
-            <p className="image-day-notice-title">한 이미지에는 한 일차의 일정을 올려주세요.</p>
-            <p className="image-day-notice-text">여러 일차가 있다면 일차별로 나누어 올려주세요.</p>
+              subtle info box로 바꿨다(2차: 보라 계열, 3차: 색만 amber로
+              교체하되 .image-day-notice*라는 별도 class를 유지). 결과
+              화면의 "비교 범위 안내"(.scope-notice)와 나란히 비교했을 때
+              색/폰트는 이미 같았지만 "같은 class를 재사용"하지는 않아
+              구조적으로 별개였다 — 지금부터는 .scope-notice/
+              .scope-notice-title/.scope-notice-text를 그대로 재사용한다
+              (새 .image-day-notice* class 없음, globals.css에서도 제거).
+              ComparisonScopeNotice와 동일한 마크업이되 아이콘만 없는
+              형태(요청사항) — 아이콘이 없어도 .scope-notice는 flex
+              child가 하나뿐인 상태로 동일하게 동작한다. */}
+          <div className="scope-notice">
+            <div>
+              <p className="scope-notice-title">한 이미지에는 한 일차의 일정을 올려주세요.</p>
+              <p className="scope-notice-text">여러 일차가 있다면 일차별로 나누어 올려주세요.</p>
+            </div>
           </div>
         </>
       )}
