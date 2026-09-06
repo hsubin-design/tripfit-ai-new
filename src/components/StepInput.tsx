@@ -609,21 +609,42 @@ function PasteDayInput({
       </div>
 
       {subTab === "text" && (
-        <textarea
-          ref={inputRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onPaste={(e) => handlePasteGuard(value, e, onShowToast)}
-          onDrop={(e) => handleDropGuard(e, onShowToast)}
-          onDragOver={(e) => e.preventDefault()}
-          rows={3}
-          placeholder={
-            dayNumber === 1
-              ? "예: 오전 10시 부산역 도착, 점심 해운대 식당 15,000원..."
-              : `${dayNumber}일차 일정을 자유롭게 적어주세요.`
-          }
-          className="field text-body resize-none p-3"
-        />
+        // 버그 수정(2026-09-06) — 길게 입력한 내용을 처음부터 다시 쓰고
+        // 싶을 때 전체 삭제할 방법이 textarea 자체를 드래그 선택하는
+        // 것뿐이었다는 피드백으로, iOS/Android 검색창에서 익숙한 원형
+        // clear(X) 버튼을 추가한다. relative 래퍼로 감싸고 버튼을
+        // absolute로 얹는 순수 레이아웃 변경이라 textarea의 value/onChange
+        // 배선은 그대로다 — 버튼도 새 상태 없이 기존 onChange("")를
+        // 그대로 재사용해 지운다(입력 파싱/구조화 로직과 무관).
+        <div className="relative">
+          <textarea
+            ref={inputRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onPaste={(e) => handlePasteGuard(value, e, onShowToast)}
+            onDrop={(e) => handleDropGuard(e, onShowToast)}
+            onDragOver={(e) => e.preventDefault()}
+            rows={3}
+            placeholder={
+              dayNumber === 1
+                ? "예: 오전 10시 부산역 도착, 점심 해운대 식당 15,000원..."
+                : `${dayNumber}일차 일정을 자유롭게 적어주세요.`
+            }
+            className="field text-body resize-none p-3 pr-9"
+          />
+          {value.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              aria-label={`${dayNumber}일차 입력 내용 지우기`}
+              className="focus-ring absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-tint-bg text-text-muted hover:bg-disabled-bg active:bg-disabled-bg"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
+        </div>
       )}
       {subTab === "image" && (
         <ImageInputPanel
