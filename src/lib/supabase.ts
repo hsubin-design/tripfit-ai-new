@@ -24,6 +24,13 @@ export type UtResponseInput = {
   // comparisonHelpfulness를 고른 이유(자유서술) — Mixpanel에는 절대
   // 보내지 않고 여기 Supabase에만 저장한다.
   comparisonHelpfulnessReason: string;
+  // v1.0 — analytics.ts의 getCurrentComparisonId()를 그대로 옮겨 담는다.
+  // Mixpanel 핵심 이벤트(comparison_started 이후 전부)에 자동으로 실리는
+  // comparison_id와 같은 값이라, 이 값으로 이 UT 응답 행과 Mixpanel
+  // 퍼널을 1:1 대조할 수 있다. tripfit_ut_responses에 comparison_id
+  // nullable 컬럼이 먼저 있어야 한다(스키마 자체는 이 코드가 만들지
+  // 않음). 값이 없을 수 있는 경우(초기화 전 등)를 대비해 null 허용.
+  comparisonId: string | null;
 };
 
 /** UT 응답 하나를 tripfit_ut_responses에 저장한다. 일정 원문(Plan A/B)이나
@@ -43,6 +50,7 @@ export async function insertUtResponse(input: UtResponseInput): Promise<{ succes
     helpfulness_score: input.helpfulnessScore,
     comparison_helpfulness: input.comparisonHelpfulness,
     comparison_helpfulness_reason: input.comparisonHelpfulnessReason,
+    comparison_id: input.comparisonId,
   });
 
   return { success: !error };

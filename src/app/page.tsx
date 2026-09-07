@@ -18,6 +18,7 @@ import { SAMPLE_PLAN_A_DAY_TEXTS, SAMPLE_PLAN_B_DAY_TEXTS } from "@/lib/sampleDa
 import { joinDayTexts, resizeDayTexts, typedLength } from "@/lib/planDayText";
 import {
   getAnalyticsDistinctId,
+  getCurrentComparisonId,
   initAnalytics,
   setComparisonId,
   trackComparisonCompleted,
@@ -30,6 +31,7 @@ import {
   trackDecisionCriterionSelected,
   trackDecisionReasonSubmitted,
   trackDecisionSubmitted,
+  trackFlowSelected,
   trackHelpfulnessSubmitted,
   trackOriginalReopened,
   trackPlanReady,
@@ -184,6 +186,11 @@ export default function Home() {
   // startComparisonSession()에서 매번 리셋된다.
   const planAStartedFiredRef = useRef(false);
   const planBStartedFiredRef = useRef(false);
+  // v1.0 — flow_selected(own_plan/sample) 1회성 가드. setInputMode를
+  // 부르는 곳이 여러 곳(기간 변경/텍스트 입력/이미지 추출/예시 불러오기)
+  // 이라 이 가드 없이는 이벤트가 계속 다시 발화된다 — 위 *StartedFiredRef와
+  // 동일한 패턴으로 startComparisonSession()에서 리셋된다.
+  const flowSelectedFiredRef = useRef(false);
   // 직전에 실제로 이벤트를 보낸 helpfulness 값 — state(comparisonHelpfulness)로
   // 비교하면, 같은 값을 아주 빠르게 연속 클릭했을 때 React가 두 클릭을
   // 한 배치로 묶어 아직 리렌더되지 않은 stale 값을 보고 중복 전송할 수
@@ -241,10 +248,24 @@ export default function Home() {
     planBReadyFiredRef.current = false;
     planAStartedFiredRef.current = false;
     planBStartedFiredRef.current = false;
+    flowSelectedFiredRef.current = false;
     lastFiredHelpfulnessRef.current = null;
     lastSavedHelpfulnessRef.current = null;
     setComparisonId(typeof crypto !== "undefined" ? crypto.randomUUID() : `${Date.now()}`);
     trackComparisonStarted();
+  }
+
+  // v1.0 — own_plan/sample 선택 시점을 잡는 flow_selected 1회성 발화
+  // 헬퍼. setInputMode(mode)를 부르던 자리를 전부 이걸로 바꿔, 그
+  // 비교 세션에서 처음 이 함수가 불릴 때만(flowSelectedFiredRef)
+  // trackFlowSelected를 보내고, state 갱신(setInputMode)은 매번 그대로
+  // 수행한다 — 실제 입력값(어느 day를 고쳤는지 등)에는 영향 없다.
+  function markFlowSelected(mode: InputMode) {
+    if (!flowSelectedFiredRef.current) {
+      flowSelectedFiredRef.current = true;
+      trackFlowSelected(mode);
+    }
+    setInputMode(mode);
   }
 
   function isPlanReady(text: string) {
@@ -256,14 +277,14 @@ export default function Home() {
     setPlanAPasteDayTexts((prev) => resizeDayTexts(prev, days));
     setPlanARawTexts((prev) => resizeDayTexts(prev, days));
     setPlanAImages((prev) => resizeImages(prev, days));
-    setInputMode("own_plan");
+    markFlowSelected("own_plan");
   }
   function handleChangePlanBDuration(days: number) {
     setPlanBDuration(days);
     setPlanBPasteDayTexts((prev) => resizeDayTexts(prev, days));
     setPlanBRawTexts((prev) => resizeDayTexts(prev, days));
     setPlanBImages((prev) => resizeImages(prev, days));
-    setInputMode("own_plan");
+    markFlowSelected("own_plan");
   }
 
   // 버그 수정(2026-09-05, 2차) — 그 day가 이미지로 채워져 있었는데
@@ -279,7 +300,7 @@ export default function Home() {
     setPlanAPasteDayTexts(next);
     setPlanARawTexts((prev) => prev.map((t, i) => (i === index ? "" : t)));
     setPlanAImages((prev) => prev.map((img, i) => (i === index ? null : img)));
-    setInputMode("own_plan");
+    markFlowSelected("own_plan");
   }
   function handleChangePlanBPasteText(index: number, value: string) {
     const next = [...planBPasteDayTexts];
@@ -287,7 +308,7 @@ export default function Home() {
     setPlanBPasteDayTexts(next);
     setPlanBRawTexts((prev) => prev.map((t, i) => (i === index ? "" : t)));
     setPlanBImages((prev) => prev.map((img, i) => (i === index ? null : img)));
-    setInputMode("own_plan");
+    markFlowSelected("own_plan");
   }
 
   // 이미지 추출 성공 시 그 day의 텍스트/이미지 슬롯을 한 번에 채운다.
@@ -300,13 +321,13 @@ export default function Home() {
     setPlanAPasteDayTexts((prev) => prev.map((t, i) => (i === index ? itineraryText : t)));
     setPlanARawTexts((prev) => prev.map((t, i) => (i === index ? rawText : t)));
     setPlanAImages((prev) => prev.map((img, i) => (i === index ? dataUrl : img)));
-    setInputMode("own_plan");
+    markFlowSelected("own_plan");
   }
   function handleImageExtractedPlanB(index: number, dataUrl: string, itineraryText: string, rawText: string) {
     setPlanBPasteDayTexts((prev) => prev.map((t, i) => (i === index ? itineraryText : t)));
     setPlanBRawTexts((prev) => prev.map((t, i) => (i === index ? rawText : t)));
     setPlanBImages((prev) => prev.map((img, i) => (i === index ? dataUrl : img)));
-    setInputMode("own_plan");
+    markFlowSelected("own_plan");
   }
 
   function handleLoadSample() {
@@ -318,7 +339,7 @@ export default function Home() {
     setPlanBPasteDayTexts([...SAMPLE_PLAN_B_DAY_TEXTS]);
     setPlanBRawTexts(new Array(SAMPLE_PLAN_B_DAY_TEXTS.length).fill(""));
     setPlanBImages(new Array(SAMPLE_PLAN_B_DAY_TEXTS.length).fill(null));
-    setInputMode("sample");
+    markFlowSelected("sample");
     trackSampleLoaded(1);
   }
 
@@ -361,7 +382,7 @@ export default function Home() {
     setPlanBPasteDayTexts(bDayTexts);
     setPlanBRawTexts(new Array(bDuration).fill(""));
     setPlanBImages(new Array(bDuration).fill(null));
-    setInputMode("own_plan");
+    markFlowSelected("own_plan");
     handleSubmitInput({ a: aDuration, b: bDuration });
   }
 
@@ -375,7 +396,7 @@ export default function Home() {
     try {
       const { planA, planB } = await requestPlanStructuring(planAText, planBText);
       setComparisonResult(buildComparison(planA, planB));
-      trackComparisonViewed(Date.now() - processingStartedAtRef.current);
+      trackComparisonViewed(Date.now() - processingStartedAtRef.current, inputMode ?? "own_plan");
       setStructuringFailure(null);
       setStep("result");
     } catch (error) {
@@ -477,7 +498,7 @@ export default function Home() {
 
   function handleDecisionSelect(d: Decision) {
     setDecision(d);
-    trackDecisionSubmitted(d);
+    trackDecisionSubmitted(d, inputMode ?? "own_plan");
     setStep("reason");
   }
 
@@ -511,6 +532,7 @@ export default function Home() {
       helpfulnessScore: null,
       comparisonHelpfulness,
       comparisonHelpfulnessReason,
+      comparisonId: getCurrentComparisonId(),
     });
 
     setIsSubmittingReason(false);
@@ -549,6 +571,7 @@ export default function Home() {
       helpfulnessScore: score,
       comparisonHelpfulness,
       comparisonHelpfulnessReason,
+      comparisonId: getCurrentComparisonId(),
     });
 
     setIsSavingHelpfulness(false);

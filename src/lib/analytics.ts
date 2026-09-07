@@ -14,6 +14,14 @@ export function setComparisonId(id: string | null) {
   currentComparisonId = id;
 }
 
+// v1.0 — Supabase(tripfit_ut_responses)에도 같은 comparison_id를 저장해
+// Mixpanel 이벤트와 1:1로 대조할 수 있게 하기 위한 getter.
+// getAnalyticsDistinctId()와 같은 패턴(모듈 내부 값을 읽기만 하는
+// 함수) — 새 식별자를 만들지 않고 이미 있는 값을 그대로 노출한다.
+export function getCurrentComparisonId(): string | null {
+  return currentComparisonId;
+}
+
 /**
  * autocapture/session replay/기본 pageview 자동 이벤트는 모두 끈다 —
  * 화면 텍스트(일정 원문 등)를 그대로 수집할 수 있어 PRD 9의 "원문·
@@ -67,6 +75,19 @@ export function trackComparisonStarted() {
 
 export function trackSampleLoaded(sampleOrder: number) {
   track("sample_loaded", { sample_order: sampleOrder });
+}
+
+// v1.0 — comparison_started는 mount 시점(사용자가 own_plan/sample을
+// 고르기 전)에 발화해 flow_mode를 실을 수 없다(구조적 제약, 타이밍을
+// 바꾸지 않기로 확정). 그 대신 "본인 일정을 직접 고치기 시작했다" 또는
+// "예시 일정을 불러왔다"의 첫 순간을 별도 이벤트로 잡아, own_plan
+// 핵심 퍼널을 flow_selected(own_plan) → comparison_requested로 볼 수
+// 있게 한다. 한 비교 세션당 1회만 발화(page.tsx의 markFlowSelected가
+// flowSelectedFiredRef로 가드) — own_plan 쪽 setInputMode 호출부가
+// 여러 곳(기간 변경/텍스트 입력/이미지 추출 등)이라 매번 다시 보내지
+// 않기 위함이다. 원문/개인정보는 담지 않는다.
+export function trackFlowSelected(flowMode: InputMode) {
+  track("flow_selected", { flow_mode: flowMode });
 }
 
 // v1.0 — sample/own_plan 쪽은 flow_mode로, text/image 입력 방식 쪽은
@@ -163,8 +184,13 @@ export function trackComparisonRequested(
   });
 }
 
-export function trackComparisonViewed(processingTimeMs: number) {
-  track("comparison_viewed", { processing_time_ms: processingTimeMs });
+// 버그 수정(2026-09-06) — 이 이벤트는 구조화 성공 후 결과 화면에 진입한
+// 시점(page.tsx handleProcessingComplete)에 발화되는데, 그때는 이미
+// own_plan/sample 선택이 끝난 뒤라 flow_mode 값이 확정돼 있다 —
+// comparison_requested와 동일하게 그 확정된 값을 그대로 싣는다(추론/
+// fallback 없이 호출부의 실제 state 값).
+export function trackComparisonViewed(processingTimeMs: number, flowMode: InputMode) {
+  track("comparison_viewed", { processing_time_ms: processingTimeMs, flow_mode: flowMode });
 }
 
 export function trackOriginalReopened(plan: "a" | "b") {
@@ -229,8 +255,11 @@ export function trackDecisionViewed() {
   track("decision_viewed");
 }
 
-export function trackDecisionSubmitted(decision: Decision) {
-  track("decision_submitted", { decision });
+// 버그 수정(2026-09-06) — comparison_viewed와 같은 이유로, 이 시점에도
+// flow_mode는 이미 확정돼 있다. 호출부(page.tsx handleDecisionSelect)의
+// 실제 state 값을 그대로 싣는다.
+export function trackDecisionSubmitted(decision: Decision, flowMode: InputMode) {
+  track("decision_submitted", { decision, flow_mode: flowMode });
 }
 
 export function trackDecisionCriterionSelected(criterion: SelectedReasonId) {
