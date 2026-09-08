@@ -191,6 +191,14 @@ export default function Home() {
   // 이라 이 가드 없이는 이벤트가 계속 다시 발화된다 — 위 *StartedFiredRef와
   // 동일한 패턴으로 startComparisonSession()에서 리셋된다.
   const flowSelectedFiredRef = useRef(false);
+  // v1.0 — decision_submitted는 "결정 버튼 클릭" 시점이 아니라 "그
+  // 결정이 Supabase에 실제로 저장 완료된" 시점의 의미를 가져야 한다
+  // (QA에서 뒤로가기 후 결정을 바꾸면 같은 comparison_id로 이 이벤트가
+  // 중복 발화되는 문제가 확인됨). handleReasonNext의 insertUtResponse
+  // 성공 콜백에서만 발화하고, 이 가드로 같은 비교 세션 내 중복 발화를
+  // 한 번 더 막는다 — flowSelectedFiredRef와 동일한 패턴,
+  // startComparisonSession()에서 리셋.
+  const decisionSubmittedFiredRef = useRef(false);
   // 직전에 실제로 이벤트를 보낸 helpfulness 값 — state(comparisonHelpfulness)로
   // 비교하면, 같은 값을 아주 빠르게 연속 클릭했을 때 React가 두 클릭을
   // 한 배치로 묶어 아직 리렌더되지 않은 stale 값을 보고 중복 전송할 수
@@ -249,6 +257,7 @@ export default function Home() {
     planAStartedFiredRef.current = false;
     planBStartedFiredRef.current = false;
     flowSelectedFiredRef.current = false;
+    decisionSubmittedFiredRef.current = false;
     lastFiredHelpfulnessRef.current = null;
     lastSavedHelpfulnessRef.current = null;
     setComparisonId(typeof crypto !== "undefined" ? crypto.randomUUID() : `${Date.now()}`);
@@ -496,9 +505,11 @@ export default function Home() {
     );
   }
 
+  // v1.0 — decision_submitted는 여기서 더 이상 발화하지 않는다(버튼
+  // 클릭은 "선택"일 뿐 "제출 완료"가 아니다). 실제 발화는 handleReasonNext
+  // 에서 Supabase 저장이 성공한 뒤에만 이뤄진다.
   function handleDecisionSelect(d: Decision) {
     setDecision(d);
-    trackDecisionSubmitted(d, inputMode ?? "own_plan");
     setStep("reason");
   }
 
@@ -542,6 +553,13 @@ export default function Home() {
       return;
     }
 
+    // v1.0 — decision_submitted = "최종 응답이 Supabase에 저장 완료된
+    // 시점"만 의미하도록, insert 성공 이후에만(그리고 세션당 1회만)
+    // 발화한다.
+    if (!decisionSubmittedFiredRef.current) {
+      decisionSubmittedFiredRef.current = true;
+      trackDecisionSubmitted(decision, inputMode ?? "own_plan");
+    }
     trackComparisonCompleted(Date.now() - comparisonStartedAtRef.current);
     setStep("complete");
   }
