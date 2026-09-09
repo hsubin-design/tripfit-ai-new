@@ -226,6 +226,40 @@ function looksLikeActivitySentence(text: string): boolean {
   return trimmed.length >= 2 && VERB_ENDING_PLACE_PATTERN.test(trimmed);
 }
 
+// 버그 수정(2026-09-09) — SYSTEM_PROMPT 규칙 5가 이미 이 단어들을
+// place에 넣지 말라고 명시하지만(목록 완전히 동일), LLM 출력이
+// 확률적이라 "이동"/"체크인"/"체크아웃"/"식사"처럼 동사 종결형이 아닌
+// 단독 명사 그대로 place에 채워지는 경우가 UT QA에서 실제로 확인됐다.
+// looksLikeActivitySentence는 "~다"/"~요"로 끝나는 문장만 잡아내므로
+// 이런 단독 명사는 통과하지 못한다 — 별도의 정확히-일치 목록으로
+// 잡는다. 새 단어를 추가하는 게 아니라 프롬프트에 이미 있는 금지어
+// 목록을 코드에도 그대로 옮겨 이중으로 방어하는 것뿐이다.
+const NON_PLACE_ACTIVITY_WORDS = new Set([
+  "숙소",
+  "점심",
+  "저녁",
+  "아침",
+  "식사",
+  "카페",
+  "식당",
+  "커피",
+  "도착",
+  "출발",
+  "이동",
+  "복귀",
+  "구경",
+  "관광",
+  "산책",
+  "방문",
+  "체크인",
+  "체크아웃",
+  "하루",
+]);
+
+function looksLikeNonPlaceActivityWord(text: string): boolean {
+  return NON_PLACE_ACTIVITY_WORDS.has(text.trim());
+}
+
 // place에 잘못 들어온 활동 서술을 activity(비어 있으면)나
 // description(activity가 이미 있으면)으로 옮기고 place는 null로
 // 되돌린다 — 새 사실을 만들거나 원문 텍스트를 지우는 게 아니라, 이미
@@ -235,14 +269,22 @@ function looksLikeActivitySentence(text: string): boolean {
 // 둔다 — is_travel_itinerary/hasStructurableContent 판정보다 먼저
 // 적용해야, 오분류된 place 때문에 "장소가 있다"고 잘못 판정되는 일이
 // 없다.
+// 버그 수정(2026-09-09) — category도 함께 null로 되돌린다. place가
+// 오분류였다면 그 place를 근거로 채워진 category(예: "이동"에 "교통")도
+// 함께 잘못된 값이므로, place를 지우면서 category를 그대로 남겨두면
+// "place가 없으면 category는 항상 null"이라는 불변 조건이 깨진다 —
+// 관광지·액티비티 배지가 활동에 잘못 붙어 보이는 문제의 근본 원인이
+// 여기 있었다.
 function correctMisplacedActivity(
   item: RawPlanStructure["days"][number]["items"][number]
 ): RawPlanStructure["days"][number]["items"][number] {
-  if (!item.place || !looksLikeActivitySentence(item.place)) return item;
+  if (!item.place) return item;
+  if (!looksLikeActivitySentence(item.place) && !looksLikeNonPlaceActivityWord(item.place)) return item;
   const misplaced = item.place;
   return {
     ...item,
     place: null,
+    category: null,
     activity: item.activity ?? misplaced,
     description: item.activity
       ? item.description
@@ -252,10 +294,52 @@ function correctMisplacedActivity(
   };
 }
 
+// 버그 수정(2026-09-09) — QA에서 "1300엔"처럼 place/activity/description이
+// 전부 없고 stated_cost만 있는 item이 통째로 하나의 타임라인 항목처럼
+// 보이는 문제가 확인됐다(예: "버스 정류장 이동"과 "긴자역 -> 나리타공항"
+// 사이에 "1300엔"만 있는 항목이 따로 생김). 이런 item은 isEmptyItem을
+// 통과해(stated_cost가 있으므로) 그대로 남는데, 실제로는 원문에서 바로
+// 앞 항목에 딸린 금액일 뿐 새로운 방문·활동이 아니다. 비용은 "해당
+// 일정 항목의 보조 메타 정보"여야 하므로(요구사항), 바로 앞 item의
+// stated_cost로 옮기고 이 item 자체는 제거한다 — dummyComparison.ts의
+// parseCostSentence/parseDashLine이 이미 쓰던 것과 같은 원칙("비용은
+// 별도 item이 아니라 기존 item의 stated_cost 속성")을 LLM 파이프라인
+// 쪽에도 안전망으로 둔다. 새 사실을 만드는 게 아니라 이미 추출된 값을
+// 올바른 item에 재배치할 뿐이다.
+function isCostOnlyItem(item: RawPlanStructure["days"][number]["items"][number]): boolean {
+  return !item.place && !item.activity && !item.description && !!item.stated_cost;
+}
+
+// 앞 item에 이미 stated_cost가 있으면(드문 경우, 원문에 비용이 두 번
+// 연달아 나온 것) 어느 한쪽을 버리거나 더하지 않고 " · "로 이어붙여
+// 두 원문 값을 모두 보존한다 — 합산/환산 금지 규칙과 동일한 이유다.
+// 붙일 앞 item이 아예 없으면(day의 첫 item부터 비용만 있는 극단적
+// 경우) 옮길 곳이 없으므로 그대로 둔다.
+function mergeCostOnlyItems(
+  items: RawPlanStructure["days"][number]["items"]
+): RawPlanStructure["days"][number]["items"] {
+  const result: RawPlanStructure["days"][number]["items"] = [];
+  for (const item of items) {
+    if (isCostOnlyItem(item) && result.length > 0) {
+      const prev = result[result.length - 1];
+      result[result.length - 1] = {
+        ...prev,
+        stated_cost: prev.stated_cost ? `${prev.stated_cost} · ${item.stated_cost}` : item.stated_cost,
+      };
+      continue;
+    }
+    result.push(item);
+  }
+  return result;
+}
+
 function correctPlanStructure(plan: RawPlanStructure): RawPlanStructure {
   return {
     ...plan,
-    days: plan.days.map((day) => ({ ...day, items: day.items.map(correctMisplacedActivity) })),
+    days: plan.days.map((day) => ({
+      ...day,
+      items: mergeCostOnlyItems(day.items.map(correctMisplacedActivity)),
+    })),
   };
 }
 

@@ -574,9 +574,19 @@ function PlanDayBlock({
                 Tailwind 오버라이드)으로 bottom padding만 12px→24px로
                 늘렸다(pb-6이 @layer utilities라 @layer components인
                 .accordion-panel의 padding-bottom보다 우선 적용됨).
-                item 사이 간격(TimelineItem의 pb-6)이나 collapsed
-                상태(패널 자체가 렌더링되지 않음)에는 영향 없다. */}
-            <div className="flex flex-col pt-6">
+                item 사이 간격(아래 gap-6)이나 collapsed 상태(패널
+                자체가 렌더링되지 않음)에는 영향 없다.
+                버그 수정(2026-09-09) — item 사이 간격을 각 TimelineItem
+                내부의 pb-6(콘텐츠 칸에 붙어 있어 콘텐츠 높이에 따라
+                다음 배지까지의 거리가 들쭉날쭉해 보이던 원인)에서 이
+                목록 자체의 gap-6로 옮겼다. gap은 항목의 실제 콘텐츠
+                높이와 무관하게 항상 24px로 고정되므로, 내용이 짧은
+                항목끼리는 배지 간격이 완전히 동일해진다(내용이 긴
+                항목은 그만큼 늘어나되, 그 뒤에 오는 gap 자체는 여전히
+                24px로 동일 — TimelineItem 안의 .timeline-rail-line이
+                이 24px gap 안까지 내려가 다음 배지와 이어지도록 CSS를
+                같이 바꿨다, globals.css 참고). */}
+            <div className="flex flex-col gap-6 pt-6">
               {sortedItems.map((item, i) => (
                 <TimelineItem
                   key={i}
@@ -684,7 +694,29 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
  *  우선순위에서 14px→15px로 키워, 배지보다 살짝 더 낮게 -mt-[3px]로
  *  당김 — DOM 측정 기반 재조정), 시간이 없으면 첫 줄이 장소명(18px/1.3
  *  라인이 배지 높이와 이미 거의 같아 추가 보정이 필요 없음)이라
- *  offset을 다르게 준다. */
+ *  offset을 다르게 준다.
+ *
+ *  버그 수정(2026-09-09) — 번호 배지 사이 세로 리듬을 "콘텐츠 높이에
+ *  기대는 방식"에서 "항상 고정된 gap + 그 gap까지 이어지는 연결선"
+ *  구조로 바꿨다. 이전엔 rail 칸(배지+세로선)이 content 칸과 같은 flex
+ *  row 안에서 stretch로 높이를 맞추고, 그 늘어난 공간을
+ *  timeline-rail-line이 flex:1로 채우는 방식이었다 — content가 짧으면
+ *  rail도 짧아져 배지끼리 바짝 붙어 보였고, min-height를 올려도 "짧은
+ *  항목들끼리도 서로 미묘하게 다른 실제 높이"만큼은 여전히 들쭉날쭉
+ *  했다(QA 스크린샷으로 재확인). 지금은 목록 자체가 flex-col gap-6(item
+ *  사이 24px 고정 간격)을 갖고, 이 컴포넌트는 그 24px 안까지 자기
+ *  rail-line을 연장해 다음 배지와 이어지도록 CSS로 처리한다
+ *  (globals.css .timeline-rail-line — top/bottom 절대위치로 재정의,
+ *  bottom:-24px가 이 gap-6 값과 반드시 같아야 한다). 즉 "배지 이후
+ *  간격"은 콘텐츠 높이와 무관하게 항상 24px로 고정되고, 콘텐츠가
+ *  길면 그만큼 항목 자체가 늘어날 뿐 뒤따르는 간격 값은 바뀌지
+ *  않는다 — 짧은 항목끼리는 완전히 동일한 배지 간격을 갖게 된다.
+ *  min-h-14는 여전히 content 칸에 남겨뒀다 — gap이 "항목 이후의
+ *  간격"은 고정해주지만, 완전히 빈 한 줄짜리 항목과 두 줄짜리 항목처럼
+ *  "항목 자체의 높이"가 다르면 배지-배지 거리는 여전히 다를 수 있어,
+ *  아주 짧은 항목들을 공통 바닥값으로 맞추는 보조 역할로 유지한다
+ *  (rail 칸이 이제 absolute 연결선이라 stretch에 기대지 않으므로,
+ *  이 min-height는 순수하게 content 칸 자신의 높이에만 영향을 준다). */
 function TimelineItem({
   number,
   item,
@@ -699,13 +731,13 @@ function TimelineItem({
   const hasTime = item.time !== null;
   return (
     <div className="flex gap-3">
-      <div className={`flex w-7 shrink-0 flex-col items-center ${hasTime ? "-mt-px" : ""}`}>
+      <div className={`relative flex w-7 shrink-0 flex-col items-center ${hasTime ? "-mt-px" : ""}`}>
         <span className="timeline-badge" aria-hidden="true">
           {number}
         </span>
         {!isLast && <span className="timeline-rail-line" aria-hidden="true" />}
       </div>
-      <div className={`min-w-0 flex-1 ${isLast ? "" : "pb-6"}`}>
+      <div className="min-h-14 min-w-0 flex-1">
         <ScheduleItem item={item} />
         {routesToNext !== null && <RouteConnector segments={routesToNext} />}
       </div>

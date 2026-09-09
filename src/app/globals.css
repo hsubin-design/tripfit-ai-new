@@ -1152,11 +1152,31 @@ body {
      background-color)로, 다른 하나는 border로 그리면 서브픽셀 단위로
      미묘하게 어긋나 보여 "선이 따로 붙은 것처럼" 보이는 문제가
      있었다. width:0 + border-left로 통일해 완전히 같은 축을
-     공유한다. */
+     공유한다.
+
+     버그 수정(2026-09-09) — flex:1 auto(부모 rail 칸이 stretch로
+     content 칸 높이에 맞춰지고, 그 늘어난 공간을 이 선이 채우는 방식)
+     에서 절대 위치(top/bottom)로 바꿨다. content 높이가 짧으면 이
+     선도 그만큼 짧아져 다음 배지와 바짝 붙어 보이는 문제가 있었다 —
+     항목 높이와 무관하게 배지 사이 간격을 항상 똑같이 만들려면, "선의
+     길이가 content 높이를 그대로 따라가는" 지금 방식 자체를 버려야
+     했다. 이제 부모(TimelineItem의 rail 칸, position:relative)의 실제
+     높이가 얼마든(콘텐츠 칸과 flex row로 stretch되어 맞춰짐) top:30px
+     (배지 24px + 기존 여백 6px)에서 시작해 bottom:-24px까지, 즉 부모
+     박스 바닥에서 24px 더 내려가는 지점까지 이어진다 — 24px는 목록
+     컨테이너의 gap-6(StepResult.tsx)과 반드시 같은 값이어야 한다.
+     gap은 항목 높이와 무관하게 항상 고정이므로, 이 선도 항상 정확히
+     다음 배지 시작 지점까지 닿는다(둘 중 하나만 바꾸면 선이 다음
+     배지에 못 미치거나 지나치므로, 두 값을 같이 바꿔야 한다). left/
+     transform으로 가운데 정렬해 기존과 같은 x좌표(칸 너비 28px의
+     중앙, .route-connector-elbow가 맞춰야 하는 축)를 유지한다. */
   .timeline-rail-line {
-    margin-top: 6px;
+    position: absolute;
+    left: 50%;
+    top: 30px;
+    bottom: -24px;
     width: 0;
-    flex: 1 1 auto;
+    transform: translateX(-50%);
     border-left: 1.5px solid var(--color-border);
   }
 
