@@ -755,7 +755,20 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
  *  높이까지 강제로 늘어나 모든 항목의 실제 렌더링 높이가 완전히
  *  같아진다. 그 결과 badge 중심 간 거리 = (동일한 항목 높이) + (동일한
  *  gap-6) 이 되어 항상 동일하다. 텍스트를 자르는 게 아니라 "늘리는"
- *  방식이라 잘림은 없다. */
+ *  방식이라 잘림은 없다.
+ *
+ *  버그 수정(2026-09-09, 3차) — row 높이를 통일한 뒤에도 배지 중심
+ *  간격이 ±1px씩 어긋나는 잔차가 실측(getBoundingClientRect)으로
+ *  확인됐다. 원인은 바로 위 문단(2차 우선순위 때 추가된) hasTime 조건부
+ *  `-mt-px`였다 — 시간이 있는 item만 배지 칸 전체를 1px 위로 당겨
+ *  "시간 텍스트 첫 줄"과 배지를 시각적으로 맞췄는데, 이 1px이 정확히
+ *  hasTime 유무가 바뀌는 구간마다 배지 간격에 그대로 새어 들어가고
+ *  있었다. "배지는 row 상단 기준 항상 같은 offset"이 이번 요구사항의
+ *  핵심이라, 이 조건부 보정을 제거했다 — 배지 칸은 이제 hasTime과
+ *  무관하게 항상 row 최상단(offset 0)에서 시작한다. 시간 텍스트
+ *  줄과의 픽셀 단위 미세 정렬(1px)보다 "배지 Y 위치의 완전한 일관성"을
+ *  우선한 트레이드오프다 — 시각적으로 구분되지 않는 수준의 정렬
+ *  차이만 다시 생긴다. */
 function TimelineItem({
   number,
   item,
@@ -771,10 +784,9 @@ function TimelineItem({
   contentRef: (el: HTMLDivElement | null) => void;
   minHeightPx: number | null;
 }) {
-  const hasTime = item.time !== null;
   return (
     <div className="flex gap-3">
-      <div className={`relative flex w-7 shrink-0 flex-col items-center ${hasTime ? "-mt-px" : ""}`}>
+      <div className="relative flex w-7 shrink-0 flex-col items-center">
         <span className="timeline-badge" aria-hidden="true">
           {number}
         </span>
