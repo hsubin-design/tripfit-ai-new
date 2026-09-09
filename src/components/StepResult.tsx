@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import AppHeader from "@/components/AppHeader";
 import type { ComparisonResult, PlanDay, PlanItem, PlanStructure } from "@/types/plan";
 import { isFreeStatedCost, sumPlanCost, type CostSum } from "@/lib/costSummary";
@@ -428,6 +428,32 @@ function PlanDayBlock({
 }) {
   const [expanded, setExpanded] = useState(false);
 
+  // 버그 수정(2026-09-09) — 배지 간격을 "고정 gap"만으로 맞추는 CSS
+  // 방식은 항목마다 콘텐츠 실제 높이가 달라(비용 chip/category 배지/
+  // secondary 텍스트 유무) 배지 중심 간 거리가 여전히 조금씩 어긋났다
+  // (getBoundingClientRect 실측으로 확인됨). 같은 Plan의 같은 day
+  // 안에서는 배지 간격이 완전히 동일해야 한다는 요구사항이라, 이
+  // day의 실제 렌더링된 항목 중 가장 높은 높이를 측정해 모든 항목의
+  // content 칸에 동일한 min-height로 적용한다 — 텍스트를 자르는 게
+  // 아니라 짧은 항목을 가장 긴 항목 높이까지 "늘리는" 방식이라 잘림이
+  // 없다. expanded가 true가 될 때만(collapsed면 DOM 자체가 없어 측정
+  // 불가) 실제 DOM에서 다시 측정한다 — useLayoutEffect라 측정→적용이
+  // 브라우저 페인트 전에 끝나 깜빡임이 없다. day.items는 이 컴포넌트가
+  // 마운트돼 있는 동안 값이 바뀌지 않으므로(재비교 시 전체 화면이
+  // 새로 마운트됨) 매 렌더마다 다시 측정하지 않고 day가 실제로 바뀔
+  // 때만 재측정한다.
+  const itemContentRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [rowMinHeight, setRowMinHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!expanded || !day) return;
+    const heights = itemContentRefs.current.map((el) => el?.getBoundingClientRect().height ?? 0);
+    const max = heights.length > 0 ? Math.max(...heights) : 0;
+    if (max > 0) {
+      setRowMinHeight((prev) => (prev === max ? prev : max));
+    }
+  }, [expanded, day]);
+
   const header = (
     <div className="flex items-center justify-between gap-3">
       <h3 className="heading-card">{label}</h3>
@@ -594,6 +620,10 @@ function PlanDayBlock({
                   item={item}
                   isLast={i === sortedItems.length - 1}
                   routesToNext={devRoute && validRouteIndices.includes(i) ? getMockRouteSegments(i) : null}
+                  contentRef={(el) => {
+                    itemContentRefs.current[i] = el;
+                  }}
+                  minHeightPx={rowMinHeight}
                 />
               ))}
             </div>
@@ -711,22 +741,35 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
  *  간격"은 콘텐츠 높이와 무관하게 항상 24px로 고정되고, 콘텐츠가
  *  길면 그만큼 항목 자체가 늘어날 뿐 뒤따르는 간격 값은 바뀌지
  *  않는다 — 짧은 항목끼리는 완전히 동일한 배지 간격을 갖게 된다.
- *  min-h-14는 여전히 content 칸에 남겨뒀다 — gap이 "항목 이후의
- *  간격"은 고정해주지만, 완전히 빈 한 줄짜리 항목과 두 줄짜리 항목처럼
- *  "항목 자체의 높이"가 다르면 배지-배지 거리는 여전히 다를 수 있어,
- *  아주 짧은 항목들을 공통 바닥값으로 맞추는 보조 역할로 유지한다
- *  (rail 칸이 이제 absolute 연결선이라 stretch에 기대지 않으므로,
- *  이 min-height는 순수하게 content 칸 자신의 높이에만 영향을 준다). */
+ *  min-h-14는 JS 측정값(minHeightPx)이 아직 없을 때(측정 직전 프레임,
+ *  또는 day가 없는 극단적 경우)를 위한 CSS 바닥값으로만 남겨뒀다.
+ *
+ *  버그 수정(2026-09-09, 2차) — 위 24px 고정 gap만으로는 "짧은 항목들
+ *  끼리도 배지 간격이 완전히 동일해야 한다"는 요구를 만족하지 못했다
+ *  (항목 자체의 실제 콘텐츠 높이가 서로 다르면, gap이 같아도 badge
+ *  중심 간 거리는 여전히 다르다 — getBoundingClientRect 실측으로
+ *  재확인됨). PlanDayBlock이 같은 day의 모든 item 중 가장 높은 실제
+ *  렌더링 높이를 측정해 minHeightPx로 내려주면, 이 컴포넌트는 그 값을
+ *  content 칸의 min-height로 그대로 적용한다 — 가장 긴 항목은 원래
+ *  높이 그대로이고(자기 자신이 최댓값이므로), 더 짧은 항목들은 그
+ *  높이까지 강제로 늘어나 모든 항목의 실제 렌더링 높이가 완전히
+ *  같아진다. 그 결과 badge 중심 간 거리 = (동일한 항목 높이) + (동일한
+ *  gap-6) 이 되어 항상 동일하다. 텍스트를 자르는 게 아니라 "늘리는"
+ *  방식이라 잘림은 없다. */
 function TimelineItem({
   number,
   item,
   isLast,
   routesToNext,
+  contentRef,
+  minHeightPx,
 }: {
   number: number;
   item: PlanItem;
   isLast: boolean;
   routesToNext: MockRouteSegment[] | null;
+  contentRef: (el: HTMLDivElement | null) => void;
+  minHeightPx: number | null;
 }) {
   const hasTime = item.time !== null;
   return (
@@ -737,7 +780,11 @@ function TimelineItem({
         </span>
         {!isLast && <span className="timeline-rail-line" aria-hidden="true" />}
       </div>
-      <div className="min-h-14 min-w-0 flex-1">
+      <div
+        ref={contentRef}
+        className="min-h-14 min-w-0 flex-1"
+        style={minHeightPx !== null ? { minHeight: minHeightPx } : undefined}
+      >
         <ScheduleItem item={item} />
         {routesToNext !== null && <RouteConnector segments={routesToNext} />}
       </div>
