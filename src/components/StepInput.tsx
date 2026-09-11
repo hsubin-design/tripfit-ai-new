@@ -878,12 +878,24 @@ function ImageInputPanel({
               쓰는 FilledInfoIcon과 같은 모양이지만 이 파일은 그 컴포넌트를
               StepResult.tsx에서 import하지 않고 로컬로 하나 더 둔다 —
               NoticeInfoIcon(StepProcessing.tsx)과 동일한 이유("구조 변경
-              최소화 원칙상 새로 import 배선을 만들지 않음")다. */}
+              최소화 원칙상 새로 import 배선을 만들지 않음")다.
+
+              버그 수정(2026-09-11) — 옛 단체여행 표처럼 표가 복잡하고
+              항목이 많은 이미지는 구조화(비교 요청 이후)에 시간이 오래
+              걸릴 수 있다는 걸 업로드 시점에 미리 안내하는 세 번째 줄을
+              추가했다(실측 QA: 20행짜리 밀도 높은 표 하나가 70초 이상
+              걸린 사례 확인, 원인 분석 결과 timeout 값/모델/구조화
+              prompt는 그대로 두기로 함 — 이 안내는 그 결정에 맞춰
+              "미리 알려주기"만 하는 최소 보완이다). 기존 두 줄(한 이미지
+              = 한 일차, 여러 날짜는 나누어 올리기)은 문구를 바꾸지
+              않았다 — 이미 여러 차례 다듬어진 문구라 새 정보 한 줄만
+              보탠다. */}
           <div className="scope-notice">
             <NoticeInfoIcon />
             <div>
               <p className="scope-notice-title">한 이미지에는 한 일차의 일정을 올려주세요.</p>
               <p className="scope-notice-text">여러 일차가 있다면 일차별로 나누어 올려주세요.</p>
+              <p className="scope-notice-text">표가 복잡하거나 항목이 많으면 처리 시간이 오래 걸릴 수 있어요.</p>
             </div>
           </div>
         </>
