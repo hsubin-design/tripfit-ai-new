@@ -611,8 +611,16 @@ function PlanDayBlock({
                 항목은 그만큼 늘어나되, 그 뒤에 오는 gap 자체는 여전히
                 24px로 동일 — TimelineItem 안의 .timeline-rail-line이
                 이 24px gap 안까지 내려가 다음 배지와 이어지도록 CSS를
-                같이 바꿨다, globals.css 참고). */}
-            <div className="flex flex-col gap-6 pt-6">
+                같이 바꿨다, globals.css 참고).
+                버그 수정(2026-09-11) — 항목 수가 많을 때 화면이 지나치게
+                길어진다는 피드백으로 gap을 24px→18px(약 25% 축소)로
+                줄였다. gap 값을 바꾸면 globals.css의
+                .timeline-rail-line bottom(-48px = 기존 gap 24px + 배지
+                24px)도 같이 바꿔야 다음 배지까지 정확히 닿는다 — 함께
+                -42px(18px + 24px)로 맞췄다(globals.css 참고). pt-6(헤더-
+                1번 item 간격)은 "item 사이" 간격이 아니라서 이번 축소
+                대상에 포함하지 않았다. */}
+            <div className="flex flex-col gap-[18px] pt-6">
               {sortedItems.map((item, i) => (
                 <TimelineItem
                   key={i}
@@ -768,7 +776,15 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
  *  무관하게 항상 row 최상단(offset 0)에서 시작한다. 시간 텍스트
  *  줄과의 픽셀 단위 미세 정렬(1px)보다 "배지 Y 위치의 완전한 일관성"을
  *  우선한 트레이드오프다 — 시각적으로 구분되지 않는 수준의 정렬
- *  차이만 다시 생긴다. */
+ *  차이만 다시 생긴다.
+ *
+ *  버그 수정(2026-09-11) — content 칸의 CSS 바닥값을 min-h-14(56px)
+ *  에서 min-h-[42px](약 25% 축소)로 줄였다. 항목 수가 많을 때 화면이
+ *  지나치게 길어 보인다는 피드백에 맞춰, 아주 짧은 항목(시간·설명·
+ *  비용이 전혀 없는 activity 하나뿐인 item)의 바닥 높이를 낮춘 것 —
+ *  실제 콘텐츠가 이보다 크면(대부분의 경우, PlanDayBlock의
+ *  minHeightPx가 이 값보다 크게 계산됨) 이 숫자는 아무 영향이 없다.
+ *  badge(24px)보다는 여전히 커서 배지가 잘리지 않는다. */
 function TimelineItem({
   number,
   item,
@@ -794,7 +810,7 @@ function TimelineItem({
       </div>
       <div
         ref={contentRef}
-        className="min-h-14 min-w-0 flex-1"
+        className="min-h-[42px] min-w-0 flex-1"
         style={minHeightPx !== null ? { minHeight: minHeightPx } : undefined}
       >
         <ScheduleItem item={item} />
@@ -942,8 +958,13 @@ function ScheduleItem({ item }: { item: PlanItem }) {
   const showActivity =
     item.activity !== null && !activityAsPrimary && (hasPlace ? item.description === null : true);
 
+  // 버그 수정(2026-09-11) — 항목이 많을 때 화면이 지나치게 길어 보인다는
+  // 피드백으로, 이 바깥 세로 스택(제목 줄/설명/activity) 간격만
+  // gap-1.5(6px)→gap-1(4px)로 소폭 줄였다. 제목 줄 안쪽 가로 gap(시간·
+  // 장소·카테고리 배지 사이, 바로 아래 줄)은 정렬에 관여해 건드리지
+  // 않는다 — 세로 spacing만 대상.
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-1.5">
         {timeLabel !== null && (
           <span className="text-[15px] font-semibold text-text-secondary">
@@ -967,7 +988,10 @@ function ScheduleItem({ item }: { item: PlanItem }) {
       )}
       {showActivity && <p className="text-[14px] leading-[1.4] text-text-secondary">{item.activity}</p>}
 
-      {/* 2차 우선순위 — 설명→비용 chip 간격을 mt-1(4px)→mt-2(8px)로
+      {/* 버그 수정(2026-09-11) — mt-2(8px)→mt-1.5(6px)로 소폭 축소
+          (항목 많을 때 화면이 길어 보인다는 피드백, 위 부모 gap도 같이
+          줄임). 정보 덩어리 사이 구분은 여전히 유지된다.
+          2차 우선순위 — 설명→비용 chip 간격을 mt-1(4px)→mt-2(8px)로
           늘려(부모 gap-1.5의 6px과 합쳐 10px→14px) 정보 덩어리 사이
           숨 쉴 공간을 조금 더 확보했다. 유료(purple)와 무료(mint/
           green)를 다른 색으로 구분한다 — category chip(blue)과도
@@ -982,13 +1006,13 @@ function ScheduleItem({ item }: { item: PlanItem }) {
           단위 표시와 무관하게 그대로 유지한다. */}
       {item.stated_cost !== null &&
         (isFreeStatedCost(item.stated_cost) ? (
-          <span className="cost-chip-free mt-2 self-start">
+          <span className="cost-chip-free mt-1.5 self-start">
             <CostIcon holeColor="var(--color-free-chip-bg)" />
             {item.stated_cost}
           </span>
         ) : (
           hasNumericAmount(item.stated_cost) && !isPureZero(item.stated_cost) && (
-            <span className="cost-chip-v1 mt-2 self-start">
+            <span className="cost-chip-v1 mt-1.5 self-start">
               <CostIcon />
               {item.stated_cost}
             </span>

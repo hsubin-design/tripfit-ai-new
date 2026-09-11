@@ -1206,12 +1206,19 @@ body {
      충분히 겹쳐 들어가 있어 어떤 서브픽셀 오차에도 끊김이 생기지
      않는다. bottom 값이 바뀌었으므로(-24 → -48) 다음 배지와의 간격
      계산(gap-6=24px)에는 영향 없음 — 늘어난 24px는 전부 "다음 배지
-     몸통 안쪽"이라 화면에 보이는 badge-to-badge 간격 자체는 그대로다. */
+     몸통 안쪽"이라 화면에 보이는 badge-to-badge 간격 자체는 그대로다.
+
+     버그 수정(2026-09-11) — StepResult.tsx의 목록 gap을 24px→18px로
+     줄이면서 이 값도 반드시 같이 바꿔야 했다(위 문단 원칙: bottom =
+     -(gap + 다음 배지 24px)). 18+24=42라 -48px→-42px로 맞췄다 — 이
+     값만 따로 바꾸면 선이 다음 배지 몸통을 다 못 뚫고 짧게 남거나
+     반대로 그다음 배지까지 넘어가므로, gap 값이 바뀔 때마다 항상
+     이 공식을 다시 적용해야 한다. */
   .timeline-rail-line {
     position: absolute;
     left: 50%;
     top: 0;
-    bottom: -48px;
+    bottom: -42px;
     width: 0;
     transform: translateX(-50%);
     border-left: 1.5px solid var(--color-border);
