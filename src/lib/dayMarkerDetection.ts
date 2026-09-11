@@ -30,8 +30,20 @@
 // 쪽 day-splitting fallback(별도의 DAY_BOUNDARY_LINE_PATTERN, 이번
 // 요청 범위 밖이라 변경하지 않음)에는 영향이 없다 — 두 정규식은
 // 애초에 서로 다른 상수였다.
+//
+// 버그 수정(2026-09-11, 2차) — production 실측 QA에서 "관광1일차"/
+// "투어1일차"/"여행 2일차"처럼 "N일차" 앞에 짧은 접두어가 붙은 표기가
+// (여행사 브로슈어·패키지 상품 안내문에서 흔함) 기존 "(\d+)\s*일\s*차"
+// (줄 맨 앞이 곧바로 숫자여야 함)에 걸리지 않아, 실제로는 여러 날짜가
+// 있는 이미지가 통째로 통과되는 케이스가 확인됐다. "숫자+일차" 바로
+// 앞에 한글/영문 접두어(최대 4자, 숫자는 포함 안 함)를 허용해 같은
+// 하나의 대안으로 흡수한다 — 접두어가 없으면(기존 "1일차") 그대로
+// 매칭되므로 기존 감지는 전혀 바뀌지 않는다. 4자로 제한한 이유는
+// "관광"/"투어"/"여행" 같은 실제 라벨(대부분 2자)은 넉넉히 덮으면서,
+// 문장 중간에 우연히 "숫자+일차" 모양이 나타나는 긴 서술문 전체를
+// 앞부분까지 통째로 흡수하는 오탐 폭을 좁히기 위함이다.
 export const DAY_MARKER =
-  /^(?:(\d+)\s*일\s*차|Day\s*(\d+)|제\s*(\d+)\s*일|첫째\s*날|첫날|둘째\s*날|셋째\s*날|넷째\s*날|다섯째\s*날|여섯째\s*날|마지막\s*날)(?:에는|에서는|은|는|에)?/i;
+  /^(?:[가-힣A-Za-z]{0,4}\s*(\d+)\s*일\s*차|Day\s*(\d+)|제\s*(\d+)\s*일|첫째\s*날|첫날|둘째\s*날|셋째\s*날|넷째\s*날|다섯째\s*날|여섯째\s*날|마지막\s*날)(?:에는|에서는|은|는|에)?/i;
 
 // "1일차"류 마커 없이 날짜 자체가 하루의 시작을 나타내는 경우도 day
 // 구분자로 인정한다 — "8월 26일", "8/26", "2026.08.26", "2026-08-26"
@@ -65,8 +77,26 @@ export function isDayHeaderStart(paragraph: string): boolean {
 // 대구공항")은 day marker로 시작하지 않으므로 오탐이 생기지 않는다.
 const TABLE_CELL_DELIMITER_PATTERN = /\s*\|\s*|\t+|[ ]{2,}/;
 
+// 버그 수정(2026-09-11, 2차) — production 실측 QA에서 "1일차\n10/14(수)"
+// (표 셀 안에서 일차 라벨과 그 날짜가 줄바꿈으로 나뉜, 실제 캡처
+// 이미지에 매우 흔한 배치)가 "1일차"(DAY_MARKER)와 "10/14(수)"
+// (DATE_HEADER_START_PATTERN) 두 개의 독립된 신호로 각각 잡혀
+// countDayHeaderLines가 2를 반환하는 오탐이 확인됐다 — 렌터카 반납일
+// 같은 본문 날짜 없이 이 두 줄만으로도 이미 임계값(2)에 도달해, 실제
+// 단일 일차 이미지가 "여러 날짜가 확인됐어요" 안내로 차단됐다.
+// "N일차 뒤에 바로 오는, day marker 단어가 없는 순수 날짜 한 줄"은
+// 새 날짜 경계가 아니라 "그 일차의 날짜"로 본다 — 그 직전 신호가
+// DAY_MARKER(일차/Day/제N일/서술형 같은 "단어" 기반 마커)였을 때만
+// 다음의 순수 날짜 신호 하나를 세지 않고 흡수한다. day marker 없이
+// 날짜만으로 하루씩 구분하는 표(예: "8/2" 다음 내용, 다음 "8/3")는
+// 이 흡수 대상이 아니므로(직전 신호가 날짜 자신이지 단어 마커가
+// 아님) 기존처럼 각각 정상 카운트된다 — "기존 감지 유지" 요구사항.
+// 반대로 일차 마커와 무관하게 본문 중간에 떨어져 나오는 날짜(예:
+// 렌터카 반납일)는 그 사이에 다른 셀들이 있어 인접하지 않으므로
+// 이 흡수 로직의 영향을 받지 않고 원래 판정 그대로 남는다.
 export function countDayHeaderLines(text: string): number {
   let count = 0;
+  let precededByNamedMarker = false;
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -75,7 +105,17 @@ export function countDayHeaderLines(text: string): number {
       .map((cell) => cell.trim())
       .filter(Boolean);
     for (const cell of cells) {
-      if (isDayHeaderStart(cell)) count += 1;
+      const isNamedMarker = DAY_MARKER.test(cell);
+      const isBareDate = !isNamedMarker && DATE_HEADER_START_PATTERN.test(cell);
+      if (isNamedMarker) {
+        count += 1;
+        precededByNamedMarker = true;
+      } else if (isBareDate) {
+        if (!precededByNamedMarker) count += 1;
+        precededByNamedMarker = false;
+      } else {
+        precededByNamedMarker = false;
+      }
     }
   }
   return count;
