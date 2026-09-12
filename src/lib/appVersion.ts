@@ -3,4 +3,4 @@
 // analytics.ts와 supabase.ts에 각각 버전 문자열이 하드코딩돼 있어 버전을
 // 올릴 때 한 곳을 놓치면 수집되는 값이 서로 어긋날 수 있었다 — 값을
 // 바꿀 때 이 상수 하나만 바꾸면 된다.
-export const APP_VERSION = "0.7.1";
+export const APP_VERSION = "1.0";
