@@ -1317,7 +1317,11 @@ function ComparisonHelpfulness({
     value === "not_helpful"
       ? "어떤 점이 아쉬웠는지 알려주세요. (선택)"
       : "어떤 점이 도움이 되었는지 알려주세요. (선택)";
-  const canSubmit = value !== null && reasonText.trim().length > 0;
+  // 버그 수정(2026-09-13) — placeholder가 "(선택)"이라고 안내하는데도
+  // reason이 비어 있으면 전송 아이콘이 disabled로 남아 실제로는 이유
+  // 입력이 필수처럼 동작했다. helpful/not_helpful 선택 여부만 있으면
+  // 전송 가능하게 한다 — 문구와 동작을 일치시킨다.
+  const canSubmit = value !== null;
   const sendDisabled = !canSubmit || isSubmitting || submitted;
 
   return (

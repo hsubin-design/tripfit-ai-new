@@ -209,6 +209,14 @@ export default function Home() {
   // 새로 insert하지 않도록 막는다. lastFiredHelpfulnessRef와 동일한
   // 이유로 ref를 쓴다(클릭 시점에 항상 최신 값을 봐야 함).
   const lastSavedHelpfulnessRef = useRef<number | null>(null);
+  // handleSubmitComparisonFeedback 전용 — 전송 아이콘 클릭과 "결정하러
+  // 가기" 자동 저장 두 경로가 같은 함수를 호출할 수 있게 되면서, 저장이
+  // 진행 중인 아주 짧은 구간(첫 호출이 setIsSubmittingComparisonFeedback(true)를
+  // 아직 커밋하지 않은 순간)에 두 번째 호출이 끼어들 여지가 이론적으로
+  // 생긴다 — state는 다음 렌더에서만 갱신되지만 ref는 그 자리에서 바로
+  // 갱신되므로(lastFiredHelpfulnessRef와 동일한 이유), isSubmittingComparisonFeedback
+  // state 가드에 더해 이 ref로 한 번 더 막는다.
+  const comparisonFeedbackInFlightRef = useRef(false);
 
   useEffect(() => {
     initAnalytics();
@@ -260,6 +268,7 @@ export default function Home() {
     decisionSubmittedFiredRef.current = false;
     lastFiredHelpfulnessRef.current = null;
     lastSavedHelpfulnessRef.current = null;
+    comparisonFeedbackInFlightRef.current = false;
     setComparisonId(typeof crypto !== "undefined" ? crypto.randomUUID() : `${Date.now()}`);
     trackComparisonStarted();
   }
@@ -466,17 +475,35 @@ export default function Home() {
     if (comparisonFeedbackSubmitted) setComparisonFeedbackSubmitted(false);
   }
 
-  // 전송 아이콘 클릭 — Supabase(tripfit_comparison_feedback) INSERT가
-  // 성공한 뒤에만 comparisonFeedbackSubmitted를 true로 바꾸고
+  // 전송 아이콘 클릭 또는 "결정하러 가기" 자동 저장(handleGoToDecision)
+  // 두 경로 모두에서 호출되는 단일 저장 함수 — Supabase(tripfit_comparison_feedback)
+  // INSERT가 성공한 뒤에만 comparisonFeedbackSubmitted를 true로 바꾸고
   // comparison_helpfulness_submitted를 보낸다. 실패하면 상태를 그대로
   // 두고 에러 메시지만 보여줘 재시도할 수 있게 한다 — 일정 원문과
   // 마찬가지로 reason 원문은 Mixpanel 인자로 넘기지 않는다. 이 피드백은
   // 전체가 optional이라 CTA(결정하러 가기)는 이 함수 호출 여부와 무관하게
   // 항상 활성화되어 있다.
+  // 버그 수정(2026-09-13) — reason이 비어 있으면 return하던 조건을
+  // 제거했다. UI placeholder("...알려주세요. (선택)")는 처음부터 이유
+  // 입력이 선택사항이라고 안내하고 있었는데, 이 가드 때문에 실제로는
+  // 이유를 안 쓰면 전송 자체가 막혀 있었다(무응답으로 조용히 return돼
+  // 콘솔/네트워크 에러도 안 남아 발견이 늦어짐) — helpful/not_helpful
+  // 선택 여부만 필수 조건으로 남긴다.
+  // comparisonFeedbackSubmitted/isSubmittingComparisonFeedback/
+  // comparisonFeedbackInFlightRef 3중 가드 — 전송 아이콘과 "결정하러
+  // 가기" 자동 저장이 같은 함수를 부르게 되면서, 이미 제출 완료됐거나
+  // (submitted) 저장이 진행 중인 동안(isSubmitting/inFlight) 두 번째
+  // 호출이 들어와도 중복 INSERT·중복 이벤트가 생기지 않도록 막는다.
+  // isSubmittingComparisonFeedback(state)만으로는 "state는 다음 렌더
+  // 이후에만 반영"되는 특성상 이론적 레이스가 남아, 그 자리에서 바로
+  // 갱신되는 ref(comparisonFeedbackInFlightRef)를 한 겹 더 둔다 —
+  // lastFiredHelpfulnessRef와 동일한 이유.
   async function handleSubmitComparisonFeedback() {
-    if (comparisonHelpfulness === null || comparisonHelpfulnessReason.trim().length === 0) return;
-    if (isSubmittingComparisonFeedback) return;
+    if (comparisonHelpfulness === null) return;
+    if (comparisonFeedbackSubmitted) return;
+    if (isSubmittingComparisonFeedback || comparisonFeedbackInFlightRef.current) return;
 
+    comparisonFeedbackInFlightRef.current = true;
     setIsSubmittingComparisonFeedback(true);
     setComparisonFeedbackSubmitError(null);
 
@@ -490,6 +517,7 @@ export default function Home() {
     });
 
     setIsSubmittingComparisonFeedback(false);
+    comparisonFeedbackInFlightRef.current = false;
 
     if (!success) {
       setComparisonFeedbackSubmitError("저장하지 못했어요. 다시 시도해주세요.");
@@ -503,6 +531,23 @@ export default function Home() {
       planADuration,
       planBDuration
     );
+  }
+
+  // 버그 수정(2026-09-13) — 전송 아이콘을 누르지 않고 "결정하러 가기"로
+  // 바로 넘어가는 사용자도 helpful/not_helpful 선택값이 남도록, 결과
+  // 화면을 벗어나는 이 시점에 한 번 자동 저장을 시도한다. 별도 insert
+  // 로직을 새로 만들지 않고 handleSubmitComparisonFeedback을 그대로
+  // 재호출한다 — 이미 전송 아이콘으로 제출됐거나 저장 진행 중이면 그
+  // 함수 내부의 3중 가드가 알아서 막아준다. 저장은 await하지 않는다
+  // (fire-and-forget) — 이 피드백은 후행지표(optional)라 핵심 퍼널(결과
+  // →결정 전환)이 저장 성공/실패를 기다리며 지연되거나 실패로 막히면
+  // 안 된다(9159bd5에서 확립된 원칙과 동일). setStep은 저장 시도 여부와
+  // 무관하게 항상 즉시 실행된다.
+  function handleGoToDecision() {
+    if (comparisonHelpfulness !== null) {
+      void handleSubmitComparisonFeedback();
+    }
+    setStep("decision");
   }
 
   // v1.0 — decision_submitted는 여기서 더 이상 발화하지 않는다(버튼
@@ -715,7 +760,7 @@ export default function Home() {
             planBRawTexts={planBRawTexts}
             planBImages={planBImages}
             onBack={() => setStep("input")}
-            onNext={() => setStep("decision")}
+            onNext={handleGoToDecision}
             onReopenOriginal={handleReopenOriginal}
             comparisonHelpfulness={comparisonHelpfulness}
             onSelectComparisonHelpfulness={handleComparisonHelpfulnessSelect}
