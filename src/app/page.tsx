@@ -7,6 +7,7 @@ import StepResult from "@/components/StepResult";
 import StepDecision from "@/components/StepDecision";
 import StepReason from "@/components/StepReason";
 import StepComplete from "@/components/StepComplete";
+import StepFinished from "@/components/StepFinished";
 import StepFeedback from "@/components/StepFeedback";
 import RouteCompareDev from "@/components/RouteCompareDev";
 import ResultSwipeVariantDev from "@/components/ResultSwipeVariantDev";
@@ -34,6 +35,7 @@ import {
   trackFlowSelected,
   trackHelpfulnessSubmitted,
   trackOriginalReopened,
+  trackParticipationCompleted,
   trackPlanReady,
   trackPlanStarted,
   trackSampleLoaded,
@@ -61,6 +63,7 @@ type Step =
   | "decision"
   | "reason"
   | "complete"
+  | "finished"
   | "feedback";
 
 export default function Home() {
@@ -157,17 +160,26 @@ export default function Home() {
   // 두 시점으로 나뉜다: (1) "다음"을 누르면 decision/reason을 helpfulness
   // 없이 먼저 저장하고 곧바로 완료 화면으로 이동 — isSubmittingReason/
   // reasonSubmitError가 이 제출 상태를 담당한다(예전 isSubmittingRating/
-  // ratingSubmitError와 같은 역할, 화면만 옮겨졌다). (2) 완료 화면에서
-  // helpfulness를 고르면 그 즉시 별도로 한 번 더 저장한다 —
-  // isSavingHelpfulness/helpfulnessSaveError가 그 상태를 담당한다. Supabase
-  // anon key는 INSERT만 가능하도록 RLS가 걸려 있어(supabase.ts 주석) 먼저
-  // 저장한 행을 나중에 UPDATE할 수 없다 — 그래서 helpfulness를 고르면
-  // decision/reason/기준을 포함해 한 번 더 insert한다(같은 insertUtResponse
-  // 함수, 같은 테이블/컬럼 구조를 그대로 재사용 — 새 스키마/RLS 변경 없음).
+  // ratingSubmitError와 같은 역할, 화면만 옮겨졌다). (2) 완료 화면의 "제출하기"를
+  // 누르면 별도로 한 번 더 저장한다 — isSavingHelpfulness/helpfulnessSaveError가
+  // 그 상태를 담당한다. Supabase anon key는 INSERT만 가능하도록 RLS가
+  // 걸려 있어(supabase.ts 주석) 먼저 저장한 행을 나중에 UPDATE할 수 없다
+  // — 그래서 helpfulness를 제출하면 decision/reason/기준을 포함해 한 번
+  // 더 insert한다(같은 insertUtResponse 함수, 같은 테이블/컬럼 구조를
+  // 그대로 재사용 — 새 스키마/RLS 변경 없음).
+  // 버그 수정(2026-09-14) — helpfulness는 필수 응답으로 바뀌면서, 별점
+  // 선택(로컬 state만) 자체와 "제출하기" 클릭(실제 저장)이 분리됐다 —
+  // 비교 결과 화면의 comparisonHelpfulness(전송 아이콘) 위젯과 동일한
+  // select/submit 분리 패턴을 그대로 적용한 것. 별을 여러 번 눌러도
+  // 로컬 state(helpfulness)만 바뀌고, 실제 insert/이벤트는 "제출하기"를
+  // 눌렀을 때 최종 선택값 하나로 한 번만 나간다.
   const [isSubmittingReason, setIsSubmittingReason] = useState(false);
   const [reasonSubmitError, setReasonSubmitError] = useState<string | null>(null);
   const [isSavingHelpfulness, setIsSavingHelpfulness] = useState(false);
   const [helpfulnessSaveError, setHelpfulnessSaveError] = useState<string | null>(null);
+  // "제출하기" INSERT가 성공한 뒤에만 true — comparisonFeedbackSubmitted와
+  // 동일한 역할(중복 제출 재진입 가드 + 이미 제출됐음을 표시).
+  const [helpfulnessSubmitted, setHelpfulnessSubmitted] = useState(false);
   // 상단 GNB "TripFit" 로고 → 처음부터 다시 시작. 아무 것도 입력/진행
   // 하지 않은 순수 초기 상태면 바로 초기화하고, 뭔가 입력했거나 결과·
   // 결정 단계까지 진행했다면(둘 다 planA/B 상태가 채워져 있어야만
@@ -205,10 +217,10 @@ export default function Home() {
   // 있다(state는 다음 렌더에서만 갱신되지만 ref는 그 자리에서 바로
   // 갱신됨). ref로 비교해야 클릭 시점에 항상 최신 값을 본다.
   const lastFiredHelpfulnessRef = useRef<"helpful" | "not_helpful" | null>(null);
-  // handleSelectHelpfulness 전용 — 같은 점수를 연속 클릭했을 때 매번
-  // 새로 insert하지 않도록 막는다. lastFiredHelpfulnessRef와 동일한
-  // 이유로 ref를 쓴다(클릭 시점에 항상 최신 값을 봐야 함).
-  const lastSavedHelpfulnessRef = useRef<number | null>(null);
+  // handleSubmitHelpfulness 전용 — comparisonFeedbackInFlightRef와 동일한
+  // 이유(state는 다음 렌더 이후에만 반영되지만 ref는 그 자리에서 바로
+  // 반영됨)로, isSavingHelpfulness state 가드에 더해 한 겹 더 둔다.
+  const helpfulnessSubmitInFlightRef = useRef(false);
   // handleSubmitComparisonFeedback 전용 — 전송 아이콘 클릭과 "결정하러
   // 가기" 자동 저장 두 경로가 같은 함수를 호출할 수 있게 되면서, 저장이
   // 진행 중인 아주 짧은 구간(첫 호출이 setIsSubmittingComparisonFeedback(true)를
@@ -267,7 +279,8 @@ export default function Home() {
     flowSelectedFiredRef.current = false;
     decisionSubmittedFiredRef.current = false;
     lastFiredHelpfulnessRef.current = null;
-    lastSavedHelpfulnessRef.current = null;
+    helpfulnessSubmitInFlightRef.current = false;
+    setHelpfulnessSubmitted(false);
     comparisonFeedbackInFlightRef.current = false;
     setComparisonId(typeof crypto !== "undefined" ? crypto.randomUUID() : `${Date.now()}`);
     trackComparisonStarted();
@@ -609,20 +622,44 @@ export default function Home() {
     setStep("complete");
   }
 
-  // 3차 우선순위 — 완료 화면의 1~5 helpfulness. 별도 "제출하기" 버튼
-  // 없이 숫자를 누르는 즉시 저장을 시도한다. decision/reason은 이미
-  // handleReasonNext에서 저장됐지만, RLS가 anon key에 UPDATE를 허용하지
-  // 않아(supabase.ts 주석) 그 행을 수정할 수 없다 — 그래서 helpfulness가
-  // 포함된 완전한 스냅샷을 같은 insertUtResponse로 한 번 더 insert한다
-  // (테이블/컬럼 구조는 그대로, 새 스키마 없음). 실패해도 helpfulness는
-  // optional이라 화면 전환을 막지 않고, 에러만 조용히 보여준다 —
-  // "새로 비교하기"는 이 성공 여부와 무관하게 항상 눌러야 한다.
-  async function handleSelectHelpfulness(score: number) {
+  // 버그 수정(2026-09-14, 2차) — helpfulness는 필수 응답이 아니라
+  // 선택사항으로 되돌린다(기존 UT 조건과 동일하게 유지하기 위함).
+  // 별을 누르는 행위 자체는 여전히 로컬 state만 바꾼다(Supabase/
+  // Mixpanel 어느 쪽도 여기서 건드리지 않는다) — 여러 번 눌러도 마지막에
+  // 누른 값 하나만 helpfulness에 남고, 실제 저장은 오직 handleSubmitHelpfulness
+  // ("제출하기" 클릭)에서만 일어난다. 재시도 중 새 값을 고르면 이전
+  // 실패 메시지가 그대로 남아있는 게 어색하므로 같이 지운다.
+  function handleChangeHelpfulness(score: number) {
     setHelpfulness(score);
-    if (lastSavedHelpfulnessRef.current === score) return;
-    lastSavedHelpfulnessRef.current = score;
-    if (decision === null) return;
+    if (helpfulnessSaveError !== null) setHelpfulnessSaveError(null);
+  }
 
+  // "제출하기" 클릭 — helpfulness 선택 여부와 무관하게 항상 누를 수
+  // 있다. decision/reason은 이미 handleReasonNext에서 저장됐지만,
+  // RLS가 anon key에 UPDATE를 허용하지 않아(supabase.ts 주석) 그 행을
+  // 수정할 수 없다 — 그래서 helpfulness(선택했으면 그 값, 아니면 null)가
+  // 포함된 완전한 스냅샷을 같은 insertUtResponse로 한 번 더 insert한다
+  // (테이블/컬럼 구조는 그대로, 새 스키마 없음). helpfulness_score는
+  // 선택 여부를 그대로 반영해 null로 남을 수 있다 — 이 함수가 그 값을
+  // 임의로 만들어내지 않는다.
+  // 신규(2026-09-14, 2차) — participation_completed는 helpfulness 선택
+  // 여부와 무관하게 저장 성공 시 항상 1회 발화한다("제출하기까지
+  // 도달했다"는 완료 신호). helpfulness_submitted는 helpfulness가
+  // null이 아닐 때만 발화한다 — 별점을 건너뛴 것과 중간 이탈을
+  // participation_completed 유무로, 별점 응답 여부를 helpfulness_submitted
+  // 유무로 구분할 수 있게 하기 위함(분석 관례: 완료율=participation_completed,
+  // 별점 응답률=helpfulness_submitted÷participation_completed).
+  // 실패하면 화면 전환/이벤트 발화 모두 하지 않고 에러만 보여줘
+  // 재시도할 수 있게 한다.
+  // helpfulnessSubmitted(state)/isSavingHelpfulness(state)/
+  // helpfulnessSubmitInFlightRef(ref) 3중 가드 — comparisonFeedback 쪽과
+  // 동일한 패턴으로 중복 클릭·재진입 시 중복 INSERT/이벤트를 막는다.
+  async function handleSubmitHelpfulness() {
+    if (decision === null) return;
+    if (helpfulnessSubmitted) return;
+    if (isSavingHelpfulness || helpfulnessSubmitInFlightRef.current) return;
+
+    helpfulnessSubmitInFlightRef.current = true;
     setIsSavingHelpfulness(true);
     setHelpfulnessSaveError(null);
 
@@ -631,22 +668,31 @@ export default function Home() {
       decision,
       selectedCriteria,
       decisionReason: reasonText,
-      helpfulnessScore: score,
+      helpfulnessScore: helpfulness,
       comparisonHelpfulness,
       comparisonHelpfulnessReason,
       comparisonId: getCurrentComparisonId(),
     });
 
     setIsSavingHelpfulness(false);
+    helpfulnessSubmitInFlightRef.current = false;
 
     if (!success) {
       setHelpfulnessSaveError("저장하지 못했어요. 다시 시도해주세요.");
       return;
     }
 
-    trackHelpfulnessSubmitted(score);
+    setHelpfulnessSubmitted(true);
+    if (helpfulness !== null) trackHelpfulnessSubmitted(helpfulness);
+    trackParticipationCompleted();
+    setStep("finished");
   }
 
+  // 버그 수정(2026-09-14, 2차) — "새로 비교하기" CTA를 완료 화면에
+  // 다시 노출한다(선택 기능). 이 함수 자체는 상단 GNB "TripFit" 로고
+  // (handleLogoClick/handleConfirmReset)와 완전히 동일하게 재사용되며,
+  // 새 comparison_id 발급 + comparison_started 재발화 로직도 그대로다
+  // (startComparisonSession() 호출 부분, 변경 없음).
   function handleRestart() {
     setStep("input");
     setPlanADuration(null);
@@ -674,6 +720,7 @@ export default function Home() {
     setReasonSubmitError(null);
     setIsSavingHelpfulness(false);
     setHelpfulnessSaveError(null);
+    setHelpfulnessSubmitted(false);
     startComparisonSession();
   }
 
@@ -810,12 +857,14 @@ export default function Home() {
             selectedCriteria={selectedCriteria}
             reasonText={reasonText}
             helpfulness={helpfulness}
-            onSelectHelpfulness={handleSelectHelpfulness}
+            onSelectHelpfulness={handleChangeHelpfulness}
+            onSubmitHelpfulness={handleSubmitHelpfulness}
             isSavingHelpfulness={isSavingHelpfulness}
             helpfulnessSaveError={helpfulnessSaveError}
-            onRestart={handleRestart}
           />
         )}
+
+        {step === "finished" && <StepFinished onRestart={handleRestart} />}
       </div>
 
       {showResetConfirm && (

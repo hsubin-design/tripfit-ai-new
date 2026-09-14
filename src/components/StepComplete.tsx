@@ -25,14 +25,17 @@ type Props = {
   decision: Decision | null;
   selectedCriteria: SelectedReasonId[];
   reasonText: string;
-  // 3차 우선순위 — 별도 "제출하기" 버튼 없이, 숫자를 누르는 즉시
-  // 부모(page.tsx)가 저장을 시도한다. 실패해도 이 화면 자체는 막지
-  // 않는다(helpfulness는 optional — "새로 비교하기"는 항상 가능).
+  // 버그 수정(2026-09-14, 2차) — helpfulness는 선택사항이다(기존 UT와
+  // 동일 조건 유지). onSelectHelpfulness는 로컬 state만 바꾸고(부모
+  // page.tsx가 Supabase/Mixpanel을 건드리지 않음), 실제 저장은
+  // onSubmitHelpfulness("제출하기" 클릭)에서만 일어난다 — 별을 아예
+  // 안 골라도 제출은 항상 가능하고, 그 경우 helpfulness_score는
+  // null로 저장된다.
   helpfulness: number | null;
   onSelectHelpfulness: (score: number) => void;
+  onSubmitHelpfulness: () => void;
   isSavingHelpfulness?: boolean;
   helpfulnessSaveError?: string | null;
-  onRestart: () => void;
 };
 
 export default function StepComplete({
@@ -41,9 +44,9 @@ export default function StepComplete({
   reasonText,
   helpfulness,
   onSelectHelpfulness,
+  onSubmitHelpfulness,
   isSavingHelpfulness = false,
   helpfulnessSaveError = null,
-  onRestart,
 }: Props) {
   const isUndecided = decision === "undecided";
   const planRowLabel = isUndecided ? "결정 상태" : "선택한 플랜";
@@ -61,14 +64,20 @@ export default function StepComplete({
   // 보여준다.
   const hasFreeReason = reasonText.trim().length > 0;
 
+  // 버그 수정(2026-09-14, 2차) — helpfulness는 선택사항이라 "제출하기"는
+  // 처음부터 항상 활성화돼 있다. 저장 중 중복 클릭만 disabled로 막는다.
+  const submitDisabled = isSavingHelpfulness;
+
   return (
     <div className="w-full">
       <div className="flex w-full flex-col px-5 pb-28 pt-20 text-left">
-        {/* 1. 완료 상태 — Figma 기준(2026-09-04)으로 완료 아이콘/배지를
-            없앴다. 제목은 순수 텍스트만, 큰 장식 일러스트도 쓰지
-            않는다. 제목/설명 모두 계속 left-aligned. */}
-        <h1 className="heading-page">제출이 완료되었습니다.</h1>
-        <p className="text-body-secondary mt-2">비교와 응답을 보내주셔서 감사합니다.</p>
+        {/* 1. 제목 — 버그 수정(2026-09-14): 이 화면은 이제 "제출 완료"가
+            아니라 helpfulness 응답을 마지막으로 받는 단계라 제목을
+            바꾼다. 실제 "제출이 완료되었습니다." 문구는 제출하기 성공
+            뒤에 도달하는 별도 화면(StepFinished)으로 옮겼다 — 아직
+            제출 전인 이 화면에 "제출 완료"/"감사합니다" 문구를 남겨두면
+            사용자에게 잘못된 신호를 주므로 여기서는 제거했다. */}
+        <h1 className="heading-page">마지막으로 의견을 알려주세요.</h1>
 
         {/* 2. 선택 결과 + 선택 이유 요약 — 사용자에게 의미가 큰 정보만
             남긴다. 입력 방식(input_mode)은 분석용 데이터로는 그대로
@@ -93,9 +102,12 @@ export default function StepComplete({
             간격(gap-5→gap-3.5)을 줄였다. n번째 별을 누르면 그 값(1~5)
             까지의 별이 모두 active(purple)로 채워진다 — 저장값 자체는
             그대로 1~5 숫자(onSelectHelpfulness(n))라 Supabase/Mixpanel
-            쪽 의미는 바뀌지 않는다. 별도 "제출하기" 버튼 없이 즉시
-            저장을 시도하는 동작, 실패해도 화면을 막지 않는 동작
-            (optional)도 이전과 동일 — spacing/크기만 바뀌었다. */}
+            쪽 의미는 바뀌지 않는다.
+            버그 수정(2026-09-14, 2차) — 별을 누르는 것 자체는 여전히
+            로컬 state만 바꾼다(저장/이벤트 없음). 실제 저장은 아래
+            고정 CTA "제출하기"에서만 일어나고, helpfulness는 선택사항
+            이라 안 골라도 제출은 항상 가능하다(최종 선택값 하나만
+            유지). */}
         <div className="card mt-7 flex w-full flex-col items-center gap-3.5 bg-subtle-surface px-4 py-5 text-center">
           {/* 2026-09-04 재보정 — heading-card(18px)가 이 카드 안에서는
               headline처럼 무겁게 느껴진다는 피드백으로, 그 아래 별점
@@ -103,8 +115,13 @@ export default function StepComplete({
               (18→16px) 낮췄다. weight(600)/색은 heading-card 그대로
               유지 — Tailwind utility(text-[16px])가 @layer utilities라
               @layer components인 heading-card보다 캐스케이드 우선순위가
-              높아 font-size만 정확히 override된다. */}
-          <h2 className="heading-card text-[16px]">이번 비교가 얼마나 도움이 되었나요?</h2>
+              높아 font-size만 정확히 override된다.
+              버그 수정(2026-09-14, 2차) — helpfulness가 선택사항임을
+              문항 옆에 "(선택)"으로 명시한다(comparisonHelpfulness
+              위젯의 placeholder "(선택)" 표기와 같은 관례). */}
+          <h2 className="heading-card text-[16px]">
+            이번 비교가 얼마나 도움이 되었나요? <span className="text-text-secondary">(선택)</span>
+          </h2>
           <div className="flex items-center justify-center gap-2">
             {[1, 2, 3, 4, 5].map((n) => (
               <button
@@ -130,8 +147,19 @@ export default function StepComplete({
           shell's max width so the CTA never grows wider than the app itself. */}
       <div className="fixed inset-x-0 bottom-0 z-10">
         <div className="bottom-cta-bar mx-auto w-full max-w-[430px]">
-          <button type="button" onClick={onRestart} className="btn-primary focus-ring w-full">
-            새로 비교하기
+          {/* 버그 수정(2026-09-14) — "새로 비교하기"를 "제출하기"로
+              교체했다("새로 비교하기"는 최종 완료 화면(StepFinished)으로
+              옮겨갔다). helpfulness는 선택사항이라 별 선택 여부와
+              무관하게 항상 활성화되고, 저장 중에는 중복 클릭 방지를
+              위해 disabled + 스피너를 보여준다. */}
+          <button
+            type="button"
+            onClick={onSubmitHelpfulness}
+            disabled={submitDisabled}
+            className="btn-primary focus-ring flex w-full items-center justify-center gap-2"
+          >
+            {isSavingHelpfulness && <SpinnerIcon />}
+            {isSavingHelpfulness ? "제출 중..." : "제출하기"}
           </button>
         </div>
       </div>
@@ -171,6 +199,17 @@ function StarIcon({ filled }: { filled: boolean }) {
         strokeWidth="1.6"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+// StepResult.tsx의 전송 아이콘 로딩 스피너와 동일한 패턴(원형 스트로크
+// + animate-spin) — 별도 공유 모듈이 없어 이 파일에도 작게 둔다.
+function SpinnerIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="animate-spin">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.3" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
     </svg>
   );
 }

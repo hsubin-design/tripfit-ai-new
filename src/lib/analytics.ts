@@ -274,6 +274,16 @@ export function trackHelpfulnessSubmitted(score: number) {
   track("helpfulness_submitted", { score });
 }
 
+// 신규(2026-09-14) — "제출하기"까지 눌러 완료 화면(helpfulness 응답
+// 포함)에 도달했다는 최종 신호. comparison_completed(비교 결과를 열람
+// 완료)와는 다른 시점 — comparison_completed는 decision/reason이 저장된
+// 순간(handleReasonNext) 발화하고, participation_completed는 그 뒤
+// helpfulness까지 제출을 마쳤을 때만 발화한다. 별도 속성 없이 발생
+// 자체만 의미가 있다.
+export function trackParticipationCompleted() {
+  track("participation_completed");
+}
+
 export function trackComparisonCompleted(timeToCompleteMs: number) {
   track("comparison_completed", { time_to_complete_ms: timeToCompleteMs });
 }
