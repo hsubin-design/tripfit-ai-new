@@ -170,6 +170,20 @@
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif;
 }
 
+/* 버그 수정(2026-09-15) — 단계별 콘텐츠 높이가 서로 달라(입력/결과
+   화면은 길고, 로딩/결정 화면은 짧음) 세로 스크롤바가 나타났다
+   사라지는 화면마다, 그만큼(보통 15~17px) 뷰포트 유효 너비가 바뀌어
+   mx-auto로 가운데 정렬된 앱 컨테이너(430px)가 화면 전환마다 좌우로
+   미세하게 움직이는 것처럼 보였다. scrollbar-gutter: stable을 문서
+   루트에 두면 실제로 스크롤이 필요한지와 무관하게 스크롤바 자리를
+   항상 같은 폭으로 예약해, 컨테이너의 가로 위치/너비가 전환 전후로
+   흔들리지 않는다. 모바일/오버레이 스크롤바 환경(스크롤바가 레이아웃
+   공간을 차지하지 않는 브라우저)에서는 이 속성이 실질적인 효과가
+   없어 빈 스크롤바 영역이 새로 생기지 않는다. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--color-background);
   color: var(--color-text-primary);

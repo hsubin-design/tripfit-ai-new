@@ -617,6 +617,18 @@ function PasteDayInput({
         // 배선은 그대로다 — 버튼도 새 상태 없이 기존 onChange("")를
         // 그대로 재사용해 지운다(입력 파싱/구조화 로직과 무관).
         <div className="relative">
+          {/* 버그 수정(2026-09-15) — 긴 텍스트로 내부 세로 스크롤바가
+              나타나면, 그 스크롤바가 X 버튼(우측 상단, absolute)과
+              같은 우측 8px 영역에서 겹쳐 스크롤바 클릭/드래그가 막히고
+              버튼도 절반쯑 가려졌다. z-index로 버튼을 위로 올리거나
+              스크롤바를 숨기는 대신, X 버튼 자체를 스크롤바보다 왼쪽
+              (right-6, 24px)으로 옮겨 겹치는 영역을 없앤다 — 대부분
+              브라우저의 세로 스크롤바는 15~17px 안팎이라 24px 오프셋이면
+              스크롤바 전체가 버튼 왼쪽에 그대로 노출·클릭 가능하다.
+              scrollbarGutter: "stable"은 스크롤 발생 여부와 무관하게
+              스크롤바 공간을 항상 같은 폭으로 예약해, 텍스트가 길어져
+              스크롤바가 나타나는 순간 내용 영역이 갑자기 좁아지며
+              레이아웃이 흔들리는 것도 함께 막는다. */}
           <textarea
             ref={inputRef}
             value={value}
@@ -630,14 +642,15 @@ function PasteDayInput({
                 ? "예: 오전 10시 부산역 도착, 점심 해운대 식당 15,000원..."
                 : `${dayNumber}일차 일정을 자유롭게 적어주세요.`
             }
-            className="field text-body resize-none p-3 pr-9"
+            className="field text-body resize-none p-3 pr-14"
+            style={{ scrollbarGutter: "stable" }}
           />
           {value.length > 0 && (
             <button
               type="button"
               onClick={() => onChange("")}
               aria-label={`${dayNumber}일차 입력 내용 지우기`}
-              className="focus-ring absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-tint-bg text-text-muted hover:bg-disabled-bg active:bg-disabled-bg"
+              className="focus-ring absolute top-2 right-6 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-tint-bg text-text-muted hover:bg-disabled-bg active:bg-disabled-bg"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
